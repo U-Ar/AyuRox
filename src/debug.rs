@@ -1,4 +1,7 @@
-use crate::chunk::{Chunk, OP_RETURN};
+use crate::{
+    chunk::{Chunk, OP_CONSTANT, OP_RETURN},
+    value::Value,
+};
 
 impl Chunk {
     pub fn disassemble(&self, name: &str) {
@@ -14,16 +17,29 @@ impl Chunk {
         print!("{:04} ", offset);
 
         match self.code[offset] {
-            OP_RETURN => simple_instruction("OP_RETURN", offset),
+            OP_CONSTANT => self.constant_instruction("OP_CONSTANT", offset),
+            OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             _ => {
                 println!("Unknown opcode {}", self.code[offset]);
                 offset + 1
             }
         }
     }
+
+    fn simple_instruction(name: &str, offset: usize) -> usize {
+        println!("{name}");
+        offset + 1
+    }
+
+    fn constant_instruction(&self, name: &str, offset: usize) -> usize {
+        let constant_index = self.code[offset + 1] as usize;
+        print!("{:-16} {:4} '", name, constant_index);
+        print_value(self.constants.values[constant_index]);
+        println!("'");
+        offset + 2
+    }
 }
 
-fn simple_instruction(name: &str, offset: usize) -> usize {
-    println!("{name}");
-    offset + 1
+fn print_value(value: Value) {
+    print!("{value}");
 }
