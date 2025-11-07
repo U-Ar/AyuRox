@@ -3,3 +3,4 @@ pub mod common;
 pub mod debug;
 pub mod memory;
 pub mod value;
+pub mod vm;

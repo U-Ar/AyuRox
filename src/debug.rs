@@ -15,6 +15,11 @@ impl Chunk {
 
     pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{:04} ", offset);
+        if offset > 0 && self.lines[offset] == self.lines[offset - 1] {
+            print!("   | ");
+        } else {
+            print!("{:4} ", self.lines[offset]);
+        }
 
         match self.code[offset] {
             OP_CONSTANT => self.constant_instruction("OP_CONSTANT", offset),
