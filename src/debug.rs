@@ -31,6 +31,18 @@ impl Chunk {
         }
     }
 
+    #[cfg(feature = "debug_trace_execution")]
+    #[inline(always)]
+    pub fn debug_trace_execution(&self, offset: usize) {
+        self.disassemble_instruction(offset);
+    }
+
+    #[cfg(not(feature = "debug_trace_execution"))]
+    #[inline(always)]
+    pub fn debug_trace_execution(&self, _offset: usize) {
+        // No-op when debug tracing is disabled
+    }
+
     fn simple_instruction(name: &str, offset: usize) -> usize {
         println!("{name}");
         offset + 1

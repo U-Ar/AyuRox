@@ -6,6 +6,7 @@ use crate::{
 pub struct VM {
     chunk: Chunk,
     ip: usize,
+    stack: Vec<Value>,
 }
 
 pub enum InterpretResult {
@@ -19,7 +20,12 @@ impl VM {
         VM {
             chunk: Chunk::new(),
             ip: 0,
+            stack: Vec::new(),
         }
+    }
+
+    pub fn reset_stack(&mut self) {
+        self.stack.clear();
     }
 
     pub fn interpret(&mut self, chunk: Chunk) {
@@ -30,6 +36,8 @@ impl VM {
 
     fn run(&mut self) -> InterpretResult {
         loop {
+            self.chunk.debug_trace_execution(self.ip);
+
             let instruction = self.read_byte();
             match instruction {
                 OP_CONSTANT => {
