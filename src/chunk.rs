@@ -2,7 +2,8 @@ use crate::value::{Value, ValueArray};
 
 pub type OpCode = u8;
 pub const OP_CONSTANT: OpCode = 0;
-pub const OP_RETURN: OpCode = 1;
+pub const OP_NEGATE: OpCode = 1;
+pub const OP_RETURN: OpCode = 2;
 
 pub struct Chunk {
     pub code: Vec<u8>,

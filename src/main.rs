@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use ayurox::{
-    chunk::{Chunk, OP_CONSTANT, OP_RETURN},
+    chunk::{Chunk, OP_CONSTANT, OP_NEGATE, OP_RETURN},
     memory::ALLOCATED,
     vm::VM,
 };
@@ -16,6 +16,8 @@ fn main() {
     let constant = chunk.add_constant(1.2);
     chunk.write(OP_CONSTANT, 123);
     chunk.write(constant, 123);
+
+    chunk.write(OP_NEGATE, 123);
 
     chunk.write(OP_RETURN, 123);
 

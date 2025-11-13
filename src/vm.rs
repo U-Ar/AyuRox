@@ -1,12 +1,12 @@
 use crate::{
-    chunk::{Chunk, OP_CONSTANT, OP_RETURN},
+    chunk::{Chunk, OP_CONSTANT, OP_NEGATE, OP_RETURN},
     value::Value,
 };
 
 pub struct VM {
-    chunk: Chunk,
-    ip: usize,
-    stack: Vec<Value>,
+    pub chunk: Chunk,
+    pub ip: usize,
+    pub stack: Vec<Value>,
 }
 
 pub enum InterpretResult {
@@ -36,25 +36,28 @@ impl VM {
 
     fn run(&mut self) -> InterpretResult {
         loop {
-            self.chunk.debug_trace_execution(self.ip);
+            self.debug_trace_execution();
 
             let instruction = self.read_byte();
             match instruction {
                 OP_CONSTANT => {
                     let constant = self.read_constant();
-                    println!("{}", constant);
-                    break;
+                    self.stack.push(constant);
+                }
+                OP_NEGATE => {
+                    let value = self.stack.pop().unwrap();
+                    self.stack.push(-value);
                 }
                 OP_RETURN => {
+                    println!("{}", self.stack.pop().unwrap());
                     return InterpretResult::Ok;
                 }
                 _ => {
                     println!("Unknown opcode {}", instruction);
-                    // return InterpretResult::RuntimeError;
+                    return InterpretResult::RuntimeError;
                 }
             }
         }
-        InterpretResult::Ok
     }
 
     fn read_byte(&mut self) -> u8 {
