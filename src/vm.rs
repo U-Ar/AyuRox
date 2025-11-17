@@ -1,5 +1,7 @@
 use crate::{
-    chunk::{Chunk, OP_CONSTANT, OP_NEGATE, OP_RETURN},
+    chunk::{
+        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_MULTIPLY, OP_NEGATE, OP_RETURN, OP_SUBTRACT,
+    },
     value::Value,
 };
 
@@ -43,6 +45,26 @@ impl VM {
                 OP_CONSTANT => {
                     let constant = self.read_constant();
                     self.stack.push(constant);
+                }
+                OP_ADD => {
+                    let b = self.stack.pop().unwrap();
+                    let a = self.stack.pop().unwrap();
+                    self.stack.push(a + b);
+                }
+                OP_SUBTRACT => {
+                    let b = self.stack.pop().unwrap();
+                    let a = self.stack.pop().unwrap();
+                    self.stack.push(a - b);
+                }
+                OP_MULTIPLY => {
+                    let b = self.stack.pop().unwrap();
+                    let a = self.stack.pop().unwrap();
+                    self.stack.push(a * b);
+                }
+                OP_DIVIDE => {
+                    let b = self.stack.pop().unwrap();
+                    let a = self.stack.pop().unwrap();
+                    self.stack.push(a / b);
                 }
                 OP_NEGATE => {
                     let value = self.stack.pop().unwrap();

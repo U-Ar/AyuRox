@@ -1,5 +1,7 @@
 use crate::{
-    chunk::{Chunk, OP_CONSTANT, OP_NEGATE, OP_RETURN},
+    chunk::{
+        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_MULTIPLY, OP_NEGATE, OP_RETURN, OP_SUBTRACT,
+    },
     value::Value,
     vm::VM,
 };
@@ -24,6 +26,10 @@ impl Chunk {
 
         match self.code[offset] {
             OP_CONSTANT => self.constant_instruction("OP_CONSTANT", offset),
+            OP_ADD => Self::simple_instruction("OP_ADD", offset),
+            OP_SUBTRACT => Self::simple_instruction("OP_SUBTRACT", offset),
+            OP_MULTIPLY => Self::simple_instruction("OP_MULTIPLY", offset),
+            OP_DIVIDE => Self::simple_instruction("OP_DIVIDE", offset),
             OP_NEGATE => Self::simple_instruction("OP_NEGATE", offset),
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             _ => {
