@@ -2,6 +2,7 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_MULTIPLY, OP_NEGATE, OP_RETURN, OP_SUBTRACT,
     },
+    compiler::Compiler,
     value::Value,
 };
 
@@ -17,10 +18,20 @@ pub enum InterpretResult {
     RuntimeError,
 }
 
+pub fn interpret(source: &str) -> InterpretResult {
+    let mut compiler = Compiler::new(source);
+    if let Some(chunk) = compiler.compile() {
+        let mut vm = VM::new(chunk);
+        vm.run()
+    } else {
+        InterpretResult::CompileError
+    }
+}
+
 impl VM {
-    pub fn new() -> Self {
+    pub fn new(chunk: Chunk) -> Self {
         VM {
-            chunk: Chunk::new(),
+            chunk,
             ip: 0,
             stack: Vec::new(),
         }
@@ -28,12 +39,6 @@ impl VM {
 
     pub fn reset_stack(&mut self) {
         self.stack.clear();
-    }
-
-    pub fn interpret(&mut self, chunk: Chunk) {
-        self.chunk = chunk;
-        self.ip = 0;
-        self.run();
     }
 
     fn run(&mut self) -> InterpretResult {
@@ -91,11 +96,5 @@ impl VM {
     fn read_constant(&mut self) -> Value {
         let constant_index = self.read_byte() as usize;
         self.chunk.constants.values[constant_index]
-    }
-}
-
-impl Default for VM {
-    fn default() -> Self {
-        Self::new()
     }
 }
