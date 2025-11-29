@@ -6,12 +6,28 @@ pub struct Scanner<'a> {
 }
 
 #[allow(dead_code)]
-pub struct Token<'a> {
-    token_type: TokenType,
-    lexeme: &'a str,
-    line: usize,
+#[derive(Clone)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub start: usize,
+    pub length: usize,
+    pub line: usize,
+    pub error_message: Option<String>,
 }
 
+impl Default for Token {
+    fn default() -> Self {
+        Token {
+            token_type: TokenType::Error,
+            start: 0,
+            length: 0,
+            line: 0,
+            error_message: None,
+        }
+    }
+}
+
+#[derive(PartialEq, Clone)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -78,7 +94,11 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_token(&'_ mut self) -> Token<'_> {
+    pub fn get_source(&self, start: usize, length: usize) -> &str {
+        &self.source[start..start + length]
+    }
+
+    pub fn scan_token(&mut self) -> Token {
         self.skip_whitespace();
         self.start = self.current;
 
@@ -178,19 +198,23 @@ impl<'a> Scanner<'a> {
         true
     }
 
-    fn make_token(&'_ self, token_type: TokenType) -> Token<'_> {
+    fn make_token(&self, token_type: TokenType) -> Token {
         Token {
             token_type,
-            lexeme: &self.source[self.start..self.current],
+            start: self.start,
+            length: self.current - self.start,
             line: self.line,
+            error_message: None,
         }
     }
 
-    fn error_token(&'_ self, message: &'static str) -> Token<'_> {
+    fn error_token(&self, message: &'static str) -> Token {
         Token {
             token_type: TokenType::Error,
-            lexeme: message,
+            start: self.start,
+            length: self.current - self.start,
             line: self.line,
+            error_message: Some(message.to_string()),
         }
     }
 
@@ -234,7 +258,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn string(&'_ mut self) -> Token<'_> {
+    fn string(&mut self) -> Token {
         while self.peek() != '"' && !self.is_at_end() {
             if self.peek() == '\n' {
                 self.line += 1;
@@ -249,7 +273,7 @@ impl<'a> Scanner<'a> {
         self.make_token(TokenType::String)
     }
 
-    fn number(&'_ mut self) -> Token<'_> {
+    fn number(&mut self) -> Token {
         while is_digit(self.peek()) {
             self.advance();
         }
@@ -264,7 +288,7 @@ impl<'a> Scanner<'a> {
         self.make_token(TokenType::Number)
     }
 
-    fn identifier(&'_ mut self) -> Token<'_> {
+    fn identifier(&mut self) -> Token {
         while is_alpha(self.peek()) || is_digit(self.peek()) {
             self.advance();
         }
