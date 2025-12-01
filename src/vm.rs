@@ -19,9 +19,9 @@ pub enum InterpretResult {
 }
 
 pub fn interpret(source: &str) -> InterpretResult {
-    let mut compiler = Compiler::new(source);
+    let compiler = Compiler::new(source);
     if let Some(chunk) = compiler.compile() {
-        let mut vm = VM::new(chunk);
+        let mut vm = VM::new(*chunk);
         vm.run()
     } else {
         InterpretResult::CompileError
