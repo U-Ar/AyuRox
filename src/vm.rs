@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_FALSE, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
-        OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -82,6 +82,31 @@ impl VM {
                 }
                 OP_TRUE => {
                     self.stack.push(Value::new_bool(true));
+                }
+                OP_EQUAL => {
+                    let b = self.stack.pop().unwrap();
+                    let a = self.stack.pop().unwrap();
+                    self.stack.push(Value::new_bool(a.is_equal(&b)));
+                }
+                OP_GREATER => {
+                    if !self.peek(0).is_number() || !self.peek(1).is_number() {
+                        self.runtime_error("Operands must be numbers.");
+                        return InterpretResult::RuntimeError;
+                    }
+                    let b = self.stack.pop().unwrap();
+                    let a = self.stack.pop().unwrap();
+                    self.stack
+                        .push(Value::new_bool(a.as_number() > b.as_number()));
+                }
+                OP_LESS => {
+                    if !self.peek(0).is_number() || !self.peek(1).is_number() {
+                        self.runtime_error("Operands must be numbers.");
+                        return InterpretResult::RuntimeError;
+                    }
+                    let b = self.stack.pop().unwrap();
+                    let a = self.stack.pop().unwrap();
+                    self.stack
+                        .push(Value::new_bool(a.as_number() < b.as_number()));
                 }
                 OP_ADD => {
                     if !self.peek(0).is_number() || !self.peek(1).is_number() {

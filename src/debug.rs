@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_FALSE, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
-        OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     value::Value,
     vm::VM,
@@ -30,6 +30,9 @@ impl Chunk {
             OP_FALSE => Self::simple_instruction("OP_FALSE", offset),
             OP_NIL => Self::simple_instruction("OP_NIL", offset),
             OP_TRUE => Self::simple_instruction("OP_TRUE", offset),
+            OP_EQUAL => Self::simple_instruction("OP_EQUAL", offset),
+            OP_GREATER => Self::simple_instruction("OP_GREATER", offset),
+            OP_LESS => Self::simple_instruction("OP_LESS", offset),
             OP_ADD => Self::simple_instruction("OP_ADD", offset),
             OP_SUBTRACT => Self::simple_instruction("OP_SUBTRACT", offset),
             OP_MULTIPLY => Self::simple_instruction("OP_MULTIPLY", offset),

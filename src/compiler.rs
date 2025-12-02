@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_FALSE, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
-        OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
     value::Value,
@@ -288,8 +288,8 @@ const fn init_parse_rules() -> [ParseRule; 256] {
     };
     rules[TokenType::BangEqual as usize] = ParseRule {
         prefix: None,
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(binary),
+        precedence: Precedence::Equality,
     };
     rules[TokenType::Equal as usize] = ParseRule {
         prefix: None,
@@ -298,28 +298,28 @@ const fn init_parse_rules() -> [ParseRule; 256] {
     };
     rules[TokenType::EqualEqual as usize] = ParseRule {
         prefix: None,
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(binary),
+        precedence: Precedence::Equality,
     };
     rules[TokenType::Greater as usize] = ParseRule {
         prefix: None,
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(binary),
+        precedence: Precedence::Comparison,
     };
     rules[TokenType::GreaterEqual as usize] = ParseRule {
         prefix: None,
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(binary),
+        precedence: Precedence::Comparison,
     };
     rules[TokenType::Less as usize] = ParseRule {
         prefix: None,
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(binary),
+        precedence: Precedence::Comparison,
     };
     rules[TokenType::LessEqual as usize] = ParseRule {
         prefix: None,
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(binary),
+        precedence: Precedence::Comparison,
     };
     rules[TokenType::Identifier as usize] = ParseRule {
         prefix: None,
@@ -467,6 +467,12 @@ fn binary(compiler: &mut Compiler) {
     compiler.parse_precedence(Precedence::from((rule.precedence as u8) + 1));
 
     match operator_type {
+        TokenType::BangEqual => compiler.emit_bytes(OP_EQUAL, OP_NOT),
+        TokenType::EqualEqual => compiler.emit_byte(OP_EQUAL),
+        TokenType::Greater => compiler.emit_byte(OP_GREATER),
+        TokenType::GreaterEqual => compiler.emit_bytes(OP_LESS, OP_NOT),
+        TokenType::Less => compiler.emit_byte(OP_LESS),
+        TokenType::LessEqual => compiler.emit_bytes(OP_GREATER, OP_NOT),
         TokenType::Plus => compiler.emit_byte(OP_ADD),
         TokenType::Minus => compiler.emit_byte(OP_SUBTRACT),
         TokenType::Star => compiler.emit_byte(OP_MULTIPLY),
