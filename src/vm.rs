@@ -109,14 +109,22 @@ impl VM {
                         .push(Value::new_bool(a.as_number() < b.as_number()));
                 }
                 OP_ADD => {
-                    if !self.peek(0).is_number() || !self.peek(1).is_number() {
-                        self.runtime_error("Operands must be numbers.");
+                    if self.peek(0).is_obj_string() && self.peek(1).is_obj_string() {
+                        let b = self.stack.pop().unwrap();
+                        let a = self.stack.pop().unwrap();
+                        let result = format!("{}{}", a.as_string(), b.as_string());
+                        let obj = Value::new_obj_string(result);
+                        self.stack.push(obj);
+                        continue;
+                    } else if self.peek(0).is_number() && self.peek(1).is_number() {
+                        let b = self.stack.pop().unwrap();
+                        let a = self.stack.pop().unwrap();
+                        self.stack
+                            .push(Value::new_number(a.as_number() + b.as_number()));
+                    } else {
+                        self.runtime_error("Operands must be two numbers or two strings.");
                         return InterpretResult::RuntimeError;
                     }
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    self.stack
-                        .push(Value::new_number(a.as_number() + b.as_number()));
                 }
                 OP_SUBTRACT => {
                     if !self.peek(0).is_number() || !self.peek(1).is_number() {
@@ -184,6 +192,6 @@ impl VM {
 
     fn read_constant(&mut self) -> Value {
         let constant_index = self.read_byte() as usize;
-        self.chunk.constants.values[constant_index]
+        self.chunk.constants.values[constant_index].clone()
     }
 }

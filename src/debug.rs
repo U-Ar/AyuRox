@@ -3,7 +3,7 @@ use crate::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
         OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
-    value::Value,
+    value::{ObjType, Value},
     vm::VM,
 };
 
@@ -66,6 +66,9 @@ pub fn print_value(value: &Value) {
         Value::Bool(b) => print!("{b}"),
         Value::Nil => print!("nil"),
         Value::Number(n) => print!("{n}"),
+        Value::Obj(obj) => match &obj.obj_type {
+            ObjType::String(s) => print!("{s}"),
+        },
     }
 }
 

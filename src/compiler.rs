@@ -4,7 +4,7 @@ use crate::{
         OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
-    value::Value,
+    value::{Obj, Value},
 };
 
 pub struct Compiler<'a> {
@@ -327,7 +327,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::None,
     };
     rules[TokenType::String as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(string),
         infix: None,
         precedence: Precedence::None,
     };
@@ -488,4 +488,17 @@ fn literal(compiler: &mut Compiler) {
         TokenType::True => compiler.emit_byte(OP_TRUE),
         _ => unreachable!(), // Unreachable.
     }
+}
+
+fn string(compiler: &mut Compiler) {
+    compiler.emit_constant(Value::new_obj(Box::new(Obj::new_string(
+        compiler
+            .parser
+            .scanner
+            .get_source(
+                compiler.parser.previous.start + 1,
+                compiler.parser.previous.length - 2,
+            )
+            .to_string(),
+    ))));
 }
