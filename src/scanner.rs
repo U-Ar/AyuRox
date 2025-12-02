@@ -27,7 +27,7 @@ impl Default for Token {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -251,6 +251,8 @@ impl<'a> Scanner<'a> {
                             }
                             self.advance();
                         }
+                    } else {
+                        return;
                     }
                 }
                 _ => return,

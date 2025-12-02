@@ -1,6 +1,7 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_MULTIPLY, OP_NEGATE, OP_RETURN, OP_SUBTRACT,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_FALSE, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
+        OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     value::Value,
     vm::VM,
@@ -26,10 +27,14 @@ impl Chunk {
 
         match self.code[offset] {
             OP_CONSTANT => self.constant_instruction("OP_CONSTANT", offset),
+            OP_FALSE => Self::simple_instruction("OP_FALSE", offset),
+            OP_NIL => Self::simple_instruction("OP_NIL", offset),
+            OP_TRUE => Self::simple_instruction("OP_TRUE", offset),
             OP_ADD => Self::simple_instruction("OP_ADD", offset),
             OP_SUBTRACT => Self::simple_instruction("OP_SUBTRACT", offset),
             OP_MULTIPLY => Self::simple_instruction("OP_MULTIPLY", offset),
             OP_DIVIDE => Self::simple_instruction("OP_DIVIDE", offset),
+            OP_NOT => Self::simple_instruction("OP_NOT", offset),
             OP_NEGATE => Self::simple_instruction("OP_NEGATE", offset),
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             _ => {
@@ -47,14 +52,18 @@ impl Chunk {
     fn constant_instruction(&self, name: &str, offset: usize) -> usize {
         let constant_index = self.code[offset + 1] as usize;
         print!("{:-16} {:4} '", name, constant_index);
-        print_value(self.constants.values[constant_index]);
+        print_value(&self.constants.values[constant_index]);
         println!("'");
         offset + 2
     }
 }
 
-fn print_value(value: Value) {
-    print!("{value}");
+pub fn print_value(value: &Value) {
+    match value {
+        Value::Bool(b) => print!("{b}"),
+        Value::Nil => print!("nil"),
+        Value::Number(n) => print!("{n}"),
+    }
 }
 
 impl VM {
@@ -64,7 +73,7 @@ impl VM {
         print!("          ");
         for slot in &self.stack {
             print!("[ ");
-            print_value(*slot);
+            print_value(slot);
             print!(" ]");
         }
         println!();

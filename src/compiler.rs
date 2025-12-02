@@ -1,6 +1,7 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_MULTIPLY, OP_NEGATE, OP_RETURN, OP_SUBTRACT,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_FALSE, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
+        OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
     value::Value,
@@ -281,7 +282,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::Factor,
     };
     rules[TokenType::Bang as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(unary),
         infix: None,
         precedence: Precedence::None,
     };
@@ -351,7 +352,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::None,
     };
     rules[TokenType::False as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(literal),
         infix: None,
         precedence: Precedence::None,
     };
@@ -371,7 +372,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::None,
     };
     rules[TokenType::Nil as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(literal),
         infix: None,
         precedence: Precedence::None,
     };
@@ -401,7 +402,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::None,
     };
     rules[TokenType::True as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(literal),
         infix: None,
         precedence: Precedence::None,
     };
@@ -438,7 +439,7 @@ fn number(compiler: &mut Compiler) {
         )
         .parse()
         .unwrap();
-    compiler.emit_constant(value);
+    compiler.emit_constant(Value::new_number(value));
 }
 
 fn grouping(compiler: &mut Compiler) {
@@ -454,6 +455,7 @@ fn unary(compiler: &mut Compiler) {
     compiler.parse_precedence(Precedence::Unary);
 
     match operator_type {
+        TokenType::Bang => compiler.emit_byte(OP_NOT),
         TokenType::Minus => compiler.emit_byte(OP_NEGATE),
         _ => unreachable!(), // Unreachable.
     }
@@ -462,7 +464,6 @@ fn unary(compiler: &mut Compiler) {
 fn binary(compiler: &mut Compiler) {
     let operator_type = compiler.parser.previous.token_type;
     let rule = &PARSE_RULES[operator_type as usize];
-    // compiler.parse_precedence((rule.precedence as u8 + 1) as Precedence);
     compiler.parse_precedence(Precedence::from((rule.precedence as u8) + 1));
 
     match operator_type {
@@ -470,6 +471,15 @@ fn binary(compiler: &mut Compiler) {
         TokenType::Minus => compiler.emit_byte(OP_SUBTRACT),
         TokenType::Star => compiler.emit_byte(OP_MULTIPLY),
         TokenType::Slash => compiler.emit_byte(OP_DIVIDE),
+        _ => unreachable!(), // Unreachable.
+    }
+}
+
+fn literal(compiler: &mut Compiler) {
+    match compiler.parser.previous.token_type {
+        TokenType::False => compiler.emit_byte(OP_FALSE),
+        TokenType::Nil => compiler.emit_byte(OP_NIL),
+        TokenType::True => compiler.emit_byte(OP_TRUE),
         _ => unreachable!(), // Unreachable.
     }
 }
