@@ -2,7 +2,7 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
         OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SUBTRACT, OP_TRUE,
+        OP_SET_GLOBAL, OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
     table::StringTable,
@@ -129,9 +129,11 @@ impl<'a> Compiler<'a> {
 
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.parser.advance();
+        let can_assign = precedence <= Precedence::Assignment;
+
         let prefix_rule = PARSE_RULES[self.parser.previous.token_type as usize].prefix;
         if let Some(prefix) = prefix_rule {
-            prefix(self);
+            prefix(self, can_assign);
         } else {
             self.parser.error("Expect expression.".to_string());
             return;
@@ -141,8 +143,12 @@ impl<'a> Compiler<'a> {
             self.parser.advance();
             let infix_rule = PARSE_RULES[self.parser.previous.token_type as usize].infix;
             if let Some(infix) = infix_rule {
-                infix(self);
+                infix(self, can_assign);
             }
+        }
+
+        if can_assign && self.parser.match_token(TokenType::Equal) {
+            self.parser.error("Invalid assignment target.".to_string());
         }
     }
 
@@ -163,9 +169,15 @@ impl<'a> Compiler<'a> {
         self.emit_bytes(OP_DEFINE_GLOBAL, global);
     }
 
-    fn named_variable(&mut self, name: Token) {
+    fn named_variable(&mut self, name: Token, can_assign: bool) {
         let arg = self.identifier_constant(&name);
-        self.emit_bytes(OP_GET_GLOBAL, arg);
+
+        if can_assign && self.parser.match_token(TokenType::Equal) {
+            self.expression();
+            self.emit_bytes(OP_SET_GLOBAL, arg);
+        } else {
+            self.emit_bytes(OP_GET_GLOBAL, arg);
+        }
     }
 
     #[cfg(feature = "debug_print_code")]
@@ -289,7 +301,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-type ParseFn = fn(&mut Compiler) -> ();
+type ParseFn = fn(&mut Compiler, bool) -> ();
 
 #[repr(u8)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -545,7 +557,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
     rules
 }
 
-fn number(compiler: &mut Compiler) {
+fn number(compiler: &mut Compiler, _can_assign: bool) {
     let value: f64 = compiler
         .parser
         .scanner
@@ -558,14 +570,14 @@ fn number(compiler: &mut Compiler) {
     compiler.emit_constant(Value::new_number(value));
 }
 
-fn grouping(compiler: &mut Compiler) {
+fn grouping(compiler: &mut Compiler, _can_assign: bool) {
     compiler.expression();
     compiler
         .parser
         .consume(TokenType::RightParen, "Expect ')' after expression.");
 }
 
-fn unary(compiler: &mut Compiler) {
+fn unary(compiler: &mut Compiler, _can_assign: bool) {
     let operator_type = compiler.parser.previous.token_type;
 
     compiler.parse_precedence(Precedence::Unary);
@@ -577,7 +589,7 @@ fn unary(compiler: &mut Compiler) {
     }
 }
 
-fn binary(compiler: &mut Compiler) {
+fn binary(compiler: &mut Compiler, _can_assign: bool) {
     let operator_type = compiler.parser.previous.token_type;
     let rule = &PARSE_RULES[operator_type as usize];
     compiler.parse_precedence(Precedence::from((rule.precedence as u8) + 1));
@@ -597,7 +609,7 @@ fn binary(compiler: &mut Compiler) {
     }
 }
 
-fn literal(compiler: &mut Compiler) {
+fn literal(compiler: &mut Compiler, _can_assign: bool) {
     match compiler.parser.previous.token_type {
         TokenType::False => compiler.emit_byte(OP_FALSE),
         TokenType::Nil => compiler.emit_byte(OP_NIL),
@@ -606,7 +618,7 @@ fn literal(compiler: &mut Compiler) {
     }
 }
 
-fn string(compiler: &mut Compiler) {
+fn string(compiler: &mut Compiler, _can_assign: bool) {
     let ptr = compiler.strings.intern(compiler.parser.scanner.get_source(
         compiler.parser.previous.start + 1,
         compiler.parser.previous.length - 2,
@@ -614,6 +626,6 @@ fn string(compiler: &mut Compiler) {
     compiler.emit_constant(Value::new_obj(ptr));
 }
 
-fn variable(compiler: &mut Compiler) {
-    compiler.named_variable(compiler.parser.previous.clone())
+fn variable(compiler: &mut Compiler, can_assign: bool) {
+    compiler.named_variable(compiler.parser.previous.clone(), can_assign)
 }

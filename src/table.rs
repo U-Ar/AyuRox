@@ -90,6 +90,15 @@ impl GlobalVariableTable {
     pub fn get(&self, name: &str) -> Option<&Value> {
         self.table.get(name)
     }
+
+    pub fn set(&mut self, name: &str, value: Value) -> bool {
+        if self.table.contains_key(name) {
+            self.table.insert(name.to_string(), value);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Default for GlobalVariableTable {

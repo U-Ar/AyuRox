@@ -2,7 +2,7 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
         OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SUBTRACT, OP_TRUE,
+        OP_SET_GLOBAL, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -130,6 +130,25 @@ impl VM {
                         if let ObjType::String(name) = &obj.obj_type {
                             let value = self.stack.pop().unwrap();
                             self.globals.define(name, value);
+                        } else {
+                            self.runtime_error("Invalid variable name.");
+                            return InterpretResult::RuntimeError;
+                        }
+                    } else {
+                        self.runtime_error("Invalid variable name.");
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OP_SET_GLOBAL => {
+                    let constant = self.read_constant();
+                    if let Value::Obj(obj) = constant {
+                        #[allow(irrefutable_let_patterns)]
+                        if let ObjType::String(name) = &obj.obj_type {
+                            let value = self.stack.pop().unwrap();
+                            if !self.globals.set(name, value) {
+                                self.runtime_error(&format!("Undefined variable '{}'.", name));
+                                return InterpretResult::RuntimeError;
+                            }
                         } else {
                             self.runtime_error("Invalid variable name.");
                             return InterpretResult::RuntimeError;

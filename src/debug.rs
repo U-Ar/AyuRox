@@ -2,7 +2,7 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
         OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SUBTRACT, OP_TRUE,
+        OP_SET_GLOBAL, OP_SUBTRACT, OP_TRUE,
     },
     value::{ObjType, Value},
     vm::VM,
@@ -34,6 +34,7 @@ impl Chunk {
             OP_POP => Self::simple_instruction("OP_POP", offset),
             OP_GET_GLOBAL => self.constant_instruction("OP_GET_GLOBAL", offset),
             OP_DEFINE_GLOBAL => self.constant_instruction("OP_DEFINE_GLOBAL", offset),
+            OP_SET_GLOBAL => self.constant_instruction("OP_SET_GLOBAL", offset),
             OP_EQUAL => Self::simple_instruction("OP_EQUAL", offset),
             OP_GREATER => Self::simple_instruction("OP_GREATER", offset),
             OP_LESS => Self::simple_instruction("OP_LESS", offset),
