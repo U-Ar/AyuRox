@@ -74,6 +74,10 @@ impl<'a> Compiler<'a> {
 
     fn declaration(&mut self) {
         self.statement();
+
+        if self.parser.panic_mode {
+            self.parser.synchronize();
+        }
     }
 
     fn statement(&mut self) {
@@ -214,6 +218,31 @@ impl<'a> Parser<'a> {
         }
         self.advance();
         true
+    }
+
+    pub fn synchronize(&mut self) {
+        self.panic_mode = false;
+
+        while self.current.token_type != TokenType::Eof {
+            if self.previous.token_type == TokenType::Semicolon {
+                return;
+            }
+
+            match self.current.token_type {
+                TokenType::Class
+                | TokenType::Fun
+                | TokenType::Var
+                | TokenType::For
+                | TokenType::If
+                | TokenType::While
+                | TokenType::Print
+                | TokenType::Return => {
+                    return;
+                }
+                _ => {}
+            }
+            self.advance();
+        }
     }
 }
 
