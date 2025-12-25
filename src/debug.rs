@@ -97,6 +97,13 @@ pub fn print_value(value: &Value) {
         Value::Number(n) => print!("{n}"),
         Value::Obj(obj) => match &obj.obj_type {
             ObjType::String(s) => print!("{s}"),
+            ObjType::Function(f) => print!(
+                "<fn {}>",
+                match &f.name.obj_type {
+                    ObjType::String(name) => name.as_str(),
+                    _ => "<script>",
+                }
+            ),
         },
     }
 }

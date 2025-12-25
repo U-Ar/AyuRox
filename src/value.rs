@@ -1,4 +1,4 @@
-use crate::memory::Gc;
+use crate::{chunk::Chunk, memory::Gc};
 
 #[derive(Clone)]
 pub enum Value {
@@ -17,6 +17,14 @@ pub struct Obj {
 #[derive(Clone)]
 pub enum ObjType {
     String(String),
+    Function(ObjFunction),
+}
+
+#[derive(Clone)]
+pub struct ObjFunction {
+    pub arity: usize,
+    pub chunk: Chunk,
+    pub name: Gc<Obj>,
 }
 
 impl Value {
@@ -47,6 +55,12 @@ impl Value {
     pub fn is_obj_string(&self) -> bool {
         match self {
             Value::Obj(obj) => matches!(obj.obj_type, ObjType::String(_)),
+            _ => false,
+        }
+    }
+    pub fn is_obj_function(&self) -> bool {
+        match self {
+            Value::Obj(obj) => matches!(obj.obj_type, ObjType::Function(_)),
             _ => false,
         }
     }
@@ -85,13 +99,23 @@ impl Value {
             panic!("Value is not an object");
         }
     }
-    #[allow(irrefutable_let_patterns)]
     pub fn as_string(&self) -> &String {
         if let Value::Obj(obj) = self {
             if let ObjType::String(s) = &obj.obj_type {
                 s
             } else {
                 panic!("Object is not a string");
+            }
+        } else {
+            panic!("Value is not an object");
+        }
+    }
+    pub fn as_function(&self) -> &ObjFunction {
+        if let Value::Obj(obj) = self {
+            if let ObjType::Function(f) = &obj.obj_type {
+                f
+            } else {
+                panic!("Object is not a function");
             }
         } else {
             panic!("Value is not an object");
@@ -115,8 +139,15 @@ impl Obj {
             next: None,
         }
     }
+    pub fn new_function(name: Gc<Obj>, chunk: Chunk, arity: usize) -> Self {
+        Obj {
+            obj_type: ObjType::Function(ObjFunction { arity, chunk, name }),
+            next: None,
+        }
+    }
 }
 
+#[derive(Clone)]
 pub struct ValueArray {
     pub values: Vec<Value>,
 }

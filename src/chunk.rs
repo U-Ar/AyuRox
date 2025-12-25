@@ -26,6 +26,7 @@ pub const OP_JUMP_IF_FALSE: OpCode = 21;
 pub const OP_LOOP: OpCode = 22;
 pub const OP_RETURN: OpCode = 23;
 
+#[derive(Clone)]
 pub struct Chunk {
     pub code: Vec<u8>,
     pub lines: Vec<usize>,
