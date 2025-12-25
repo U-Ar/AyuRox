@@ -6,18 +6,19 @@ pub const OP_NIL: OpCode = 1;
 pub const OP_TRUE: OpCode = 2;
 pub const OP_FALSE: OpCode = 3;
 pub const OP_POP: OpCode = 4;
-pub const OP_DEFINE_GLOBAL: OpCode = 5;
-pub const OP_EQUAL: OpCode = 6;
-pub const OP_GREATER: OpCode = 7;
-pub const OP_LESS: OpCode = 8;
-pub const OP_ADD: OpCode = 9;
-pub const OP_SUBTRACT: OpCode = 10;
-pub const OP_MULTIPLY: OpCode = 11;
-pub const OP_DIVIDE: OpCode = 12;
-pub const OP_NOT: OpCode = 13;
-pub const OP_NEGATE: OpCode = 14;
-pub const OP_PRINT: OpCode = 15;
-pub const OP_RETURN: OpCode = 16;
+pub const OP_GET_GLOBAL: OpCode = 5;
+pub const OP_DEFINE_GLOBAL: OpCode = 6;
+pub const OP_EQUAL: OpCode = 7;
+pub const OP_GREATER: OpCode = 8;
+pub const OP_LESS: OpCode = 9;
+pub const OP_ADD: OpCode = 10;
+pub const OP_SUBTRACT: OpCode = 11;
+pub const OP_MULTIPLY: OpCode = 12;
+pub const OP_DIVIDE: OpCode = 13;
+pub const OP_NOT: OpCode = 14;
+pub const OP_NEGATE: OpCode = 15;
+pub const OP_PRINT: OpCode = 16;
+pub const OP_RETURN: OpCode = 17;
 
 pub struct Chunk {
     pub code: Vec<u8>,

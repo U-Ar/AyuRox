@@ -1,8 +1,8 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER,
-        OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT,
-        OP_TRUE,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
+        OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -103,6 +103,26 @@ impl VM {
                 OP_POP => {
                     self.stack.pop();
                 }
+                OP_GET_GLOBAL => {
+                    let constant = self.read_constant();
+                    if let Value::Obj(obj) = constant {
+                        #[allow(irrefutable_let_patterns)]
+                        if let ObjType::String(name) = &obj.obj_type {
+                            if let Some(value) = self.globals.get(name) {
+                                self.stack.push(value.clone());
+                            } else {
+                                self.runtime_error(&format!("Undefined variable '{}'.", name));
+                                return InterpretResult::RuntimeError;
+                            }
+                        } else {
+                            self.runtime_error("Invalid variable name.");
+                            return InterpretResult::RuntimeError;
+                        }
+                    } else {
+                        self.runtime_error("Invalid variable name.");
+                        return InterpretResult::RuntimeError;
+                    }
+                }
                 OP_DEFINE_GLOBAL => {
                     let constant = self.read_constant();
                     if let Value::Obj(obj) = constant {
@@ -110,6 +130,9 @@ impl VM {
                         if let ObjType::String(name) = &obj.obj_type {
                             let value = self.stack.pop().unwrap();
                             self.globals.define(name, value);
+                        } else {
+                            self.runtime_error("Invalid variable name.");
+                            return InterpretResult::RuntimeError;
                         }
                     } else {
                         self.runtime_error("Invalid variable name.");

@@ -56,8 +56,6 @@ impl<T> std::ops::Deref for Gc<T> {
 
 impl<T> Drop for Gc<T> {
     fn drop(&mut self) {
-        unsafe {
-            drop(Box::from_raw(self.ptr.as_ptr()));
-        }
+        // Do nothing; memory will be freed during mark and sweep GC
     }
 }

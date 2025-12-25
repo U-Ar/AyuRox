@@ -1,8 +1,8 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER,
-        OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT,
-        OP_TRUE,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
+        OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
     table::StringTable,
@@ -161,6 +161,11 @@ impl<'a> Compiler<'a> {
 
     fn define_variable(&mut self, global: u8) {
         self.emit_bytes(OP_DEFINE_GLOBAL, global);
+    }
+
+    fn named_variable(&mut self, name: Token) {
+        let arg = self.identifier_constant(&name);
+        self.emit_bytes(OP_GET_GLOBAL, arg);
     }
 
     #[cfg(feature = "debug_print_code")]
@@ -433,7 +438,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::Comparison,
     };
     rules[TokenType::Identifier as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(variable),
         infix: None,
         precedence: Precedence::None,
     };
@@ -607,4 +612,8 @@ fn string(compiler: &mut Compiler) {
         compiler.parser.previous.length - 2,
     ));
     compiler.emit_constant(Value::new_obj(ptr));
+}
+
+fn variable(compiler: &mut Compiler) {
+    compiler.named_variable(compiler.parser.previous.clone())
 }
