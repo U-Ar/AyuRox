@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -96,6 +96,9 @@ impl VM {
                 }
                 OP_TRUE => {
                     self.stack.push(Value::new_bool(true));
+                }
+                OP_POP => {
+                    self.stack.pop();
                 }
                 OP_EQUAL => {
                     let b = self.stack.pop().unwrap();

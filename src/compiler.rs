@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
     table::StringTable,
@@ -79,6 +79,8 @@ impl<'a> Compiler<'a> {
     fn statement(&mut self) {
         if self.parser.match_token(TokenType::Print) {
             self.print_statement();
+        } else {
+            self.expression_statement();
         }
     }
 
@@ -87,6 +89,13 @@ impl<'a> Compiler<'a> {
         self.parser
             .consume(TokenType::Semicolon, "Expect ';' after value.");
         self.emit_byte(OP_PRINT);
+    }
+
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.parser
+            .consume(TokenType::Semicolon, "Expect ';' after expression.");
+        self.emit_byte(OP_POP);
     }
 
     fn expression(&mut self) {
