@@ -6,20 +6,22 @@ pub const OP_NIL: OpCode = 1;
 pub const OP_TRUE: OpCode = 2;
 pub const OP_FALSE: OpCode = 3;
 pub const OP_POP: OpCode = 4;
-pub const OP_GET_GLOBAL: OpCode = 5;
-pub const OP_DEFINE_GLOBAL: OpCode = 6;
-pub const OP_SET_GLOBAL: OpCode = 7;
-pub const OP_EQUAL: OpCode = 8;
-pub const OP_GREATER: OpCode = 9;
-pub const OP_LESS: OpCode = 10;
-pub const OP_ADD: OpCode = 11;
-pub const OP_SUBTRACT: OpCode = 12;
-pub const OP_MULTIPLY: OpCode = 13;
-pub const OP_DIVIDE: OpCode = 14;
-pub const OP_NOT: OpCode = 15;
-pub const OP_NEGATE: OpCode = 16;
-pub const OP_PRINT: OpCode = 17;
-pub const OP_RETURN: OpCode = 18;
+pub const OP_GET_LOCAL: OpCode = 5;
+pub const OP_SET_LOCAL: OpCode = 6;
+pub const OP_GET_GLOBAL: OpCode = 7;
+pub const OP_DEFINE_GLOBAL: OpCode = 8;
+pub const OP_SET_GLOBAL: OpCode = 9;
+pub const OP_EQUAL: OpCode = 10;
+pub const OP_GREATER: OpCode = 11;
+pub const OP_LESS: OpCode = 12;
+pub const OP_ADD: OpCode = 13;
+pub const OP_SUBTRACT: OpCode = 14;
+pub const OP_MULTIPLY: OpCode = 15;
+pub const OP_DIVIDE: OpCode = 16;
+pub const OP_NOT: OpCode = 17;
+pub const OP_NEGATE: OpCode = 18;
+pub const OP_PRINT: OpCode = 19;
+pub const OP_RETURN: OpCode = 20;
 
 pub struct Chunk {
     pub code: Vec<u8>,

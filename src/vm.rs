@@ -1,8 +1,8 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
-        OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SET_GLOBAL, OP_SUBTRACT, OP_TRUE,
+        OP_GET_LOCAL, OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
+        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -102,6 +102,16 @@ impl VM {
                 }
                 OP_POP => {
                     self.stack.pop();
+                }
+                OP_GET_LOCAL => {
+                    let slot = self.read_byte() as usize;
+                    let value = self.stack[slot].clone();
+                    self.stack.push(value);
+                }
+                OP_SET_LOCAL => {
+                    let slot = self.read_byte() as usize;
+                    let value = self.peek(0).clone();
+                    self.stack[slot] = value;
                 }
                 OP_GET_GLOBAL => {
                     let constant = self.read_constant();
