@@ -5,6 +5,7 @@ use crate::{
     },
     compiler::Compiler,
     debug::print_value,
+    table::StringTable,
     value::Value,
 };
 
@@ -12,6 +13,18 @@ pub struct VM {
     pub chunk: Chunk,
     pub ip: usize,
     pub stack: Vec<Value>,
+    pub strings: StringTable,
+}
+
+pub struct RuntimeExpression {
+    pub chunk: Chunk,
+    pub strings: StringTable,
+}
+
+impl RuntimeExpression {
+    pub fn new(chunk: Chunk, strings: StringTable) -> Self {
+        RuntimeExpression { chunk, strings }
+    }
 }
 
 pub enum InterpretResult {
@@ -22,8 +35,8 @@ pub enum InterpretResult {
 
 pub fn interpret(source: &str) -> InterpretResult {
     let compiler = Compiler::new(source);
-    if let Some(chunk) = compiler.compile() {
-        let mut vm = VM::new(*chunk);
+    if let Some(runtime_expression) = compiler.compile() {
+        let mut vm = VM::new(runtime_expression);
         vm.run()
     } else {
         InterpretResult::CompileError
@@ -39,11 +52,12 @@ fn is_falsey(value: &Value) -> bool {
 }
 
 impl VM {
-    pub fn new(chunk: Chunk) -> Self {
+    pub fn new(runtime_expression: RuntimeExpression) -> Self {
         VM {
-            chunk,
+            chunk: runtime_expression.chunk,
             ip: 0,
             stack: Vec::new(),
+            strings: runtime_expression.strings,
         }
     }
 
@@ -113,7 +127,7 @@ impl VM {
                         let b = self.stack.pop().unwrap();
                         let a = self.stack.pop().unwrap();
                         let result = format!("{}{}", a.as_string(), b.as_string());
-                        let obj = Value::new_obj_string(result);
+                        let obj = Value::new_obj(self.strings.intern(&result));
                         self.stack.push(obj);
                         continue;
                     } else if self.peek(0).is_number() && self.peek(1).is_number() {

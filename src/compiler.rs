@@ -4,12 +4,15 @@ use crate::{
         OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
-    value::{Obj, Value},
+    table::StringTable,
+    value::Value,
+    vm::RuntimeExpression,
 };
 
 pub struct Compiler<'a> {
     parser: Parser<'a>,
     chunk: Box<Chunk>,
+    strings: StringTable,
 }
 
 impl<'a> Compiler<'a> {
@@ -17,6 +20,7 @@ impl<'a> Compiler<'a> {
         Compiler {
             parser: Parser::new(Scanner::new(source)),
             chunk: Box::new(Chunk::new()),
+            strings: StringTable::new(),
         }
     }
 
@@ -24,13 +28,13 @@ impl<'a> Compiler<'a> {
         &mut self.chunk
     }
 
-    pub fn compile(mut self) -> Option<Box<Chunk>> {
+    pub fn compile(mut self) -> Option<RuntimeExpression> {
         self.parser.advance();
         self.expression();
         self.parser
             .consume(TokenType::Eof, "Expect end of expression.");
         self.end_compiler();
-        Some(self.chunk)
+        Some(RuntimeExpression::new(*self.chunk, self.strings))
     }
 
     fn emit_byte(&mut self, byte: u8) {
@@ -491,14 +495,9 @@ fn literal(compiler: &mut Compiler) {
 }
 
 fn string(compiler: &mut Compiler) {
-    compiler.emit_constant(Value::new_obj(Box::new(Obj::new_string(
-        compiler
-            .parser
-            .scanner
-            .get_source(
-                compiler.parser.previous.start + 1,
-                compiler.parser.previous.length - 2,
-            )
-            .to_string(),
-    ))));
+    let ptr = compiler.strings.intern(compiler.parser.scanner.get_source(
+        compiler.parser.previous.start + 1,
+        compiler.parser.previous.length - 2,
+    ));
+    compiler.emit_constant(Value::new_obj(ptr));
 }

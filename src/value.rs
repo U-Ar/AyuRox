@@ -1,14 +1,17 @@
+use crate::memory::Gc;
+
 #[derive(Clone)]
 pub enum Value {
     Bool(bool),
     Nil,
     Number(f64),
-    Obj(Box<Obj>),
+    Obj(Gc<Obj>),
 }
 
 #[derive(Clone)]
 pub struct Obj {
     pub obj_type: ObjType,
+    pub next: Option<Gc<Obj>>,
 }
 
 #[derive(Clone)]
@@ -26,11 +29,8 @@ impl Value {
     pub fn new_number(n: f64) -> Self {
         Value::Number(n)
     }
-    pub fn new_obj(obj: Box<Obj>) -> Self {
+    pub fn new_obj(obj: Gc<Obj>) -> Self {
         Value::Obj(obj)
-    }
-    pub fn new_obj_string(s: String) -> Self {
-        Value::Obj(Box::new(Obj::new_string(s)))
     }
     pub fn is_bool(&self) -> bool {
         matches!(self, Value::Bool(_))
@@ -102,9 +102,7 @@ impl Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::Number(a), Value::Number(b)) => a == b,
-            (Value::Obj(a), Value::Obj(b)) => match (&a.obj_type, &b.obj_type) {
-                (ObjType::String(sa), ObjType::String(sb)) => sa == sb,
-            },
+            (Value::Obj(a), Value::Obj(b)) => a.ptr_eq(b),
             _ => false,
         }
     }
@@ -114,6 +112,7 @@ impl Obj {
     pub fn new_string(s: String) -> Self {
         Obj {
             obj_type: ObjType::String(s),
+            next: None,
         }
     }
 }

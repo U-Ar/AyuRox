@@ -1,4 +1,5 @@
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct TrackingAllocator;
@@ -22,3 +23,41 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 
 #[global_allocator]
 static A: TrackingAllocator = TrackingAllocator;
+
+#[derive(Debug, Clone)]
+pub struct Gc<T> {
+    ptr: NonNull<T>,
+}
+
+impl<T> Gc<T> {
+    pub fn new(value: T) -> Self {
+        let boxed = Box::new(value);
+        Gc {
+            ptr: NonNull::new(Box::into_raw(boxed)).expect("Box::into_raw returned null"),
+        }
+    }
+
+    pub fn as_ptr(self) -> *const T {
+        unsafe { self.ptr.as_ref() as *const T }
+    }
+
+    pub fn ptr_eq(&self, other: &Gc<T>) -> bool {
+        std::ptr::eq(self.ptr.as_ptr(), other.ptr.as_ptr())
+    }
+}
+
+impl<T> std::ops::Deref for Gc<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T> Drop for Gc<T> {
+    fn drop(&mut self) {
+        unsafe {
+            drop(Box::from_raw(self.ptr.as_ptr()));
+        }
+    }
+}
