@@ -1,6 +1,9 @@
 use std::{collections::HashMap, hash::BuildHasher};
 
-use crate::{memory::Gc, value::Obj};
+use crate::{
+    memory::Gc,
+    value::{Obj, Value},
+};
 
 pub struct BuildHasherFNV {}
 
@@ -64,6 +67,32 @@ impl StringTable {
 }
 
 impl Default for StringTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct GlobalVariableTable {
+    pub table: HashMap<String, Value, BuildHasherFNV>,
+}
+
+impl GlobalVariableTable {
+    pub fn new() -> Self {
+        GlobalVariableTable {
+            table: HashMap::with_hasher(BuildHasherFNV::new()),
+        }
+    }
+
+    pub fn define(&mut self, name: &str, value: Value) {
+        self.table.insert(name.to_string(), value);
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.table.get(name)
+    }
+}
+
+impl Default for GlobalVariableTable {
     fn default() -> Self {
         Self::new()
     }

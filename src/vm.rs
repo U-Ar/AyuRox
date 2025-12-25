@@ -1,12 +1,13 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER,
+        OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT,
+        OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
-    table::StringTable,
-    value::Value,
+    table::{GlobalVariableTable, StringTable},
+    value::{ObjType, Value},
 };
 
 pub struct VM {
@@ -14,6 +15,7 @@ pub struct VM {
     pub ip: usize,
     pub stack: Vec<Value>,
     pub strings: StringTable,
+    pub globals: GlobalVariableTable,
 }
 
 pub struct RuntimeExpression {
@@ -58,6 +60,7 @@ impl VM {
             ip: 0,
             stack: Vec::new(),
             strings: runtime_expression.strings,
+            globals: GlobalVariableTable::new(),
         }
     }
 
@@ -99,6 +102,19 @@ impl VM {
                 }
                 OP_POP => {
                     self.stack.pop();
+                }
+                OP_DEFINE_GLOBAL => {
+                    let constant = self.read_constant();
+                    if let Value::Obj(obj) = constant {
+                        #[allow(irrefutable_let_patterns)]
+                        if let ObjType::String(name) = &obj.obj_type {
+                            let value = self.stack.pop().unwrap();
+                            self.globals.define(name, value);
+                        }
+                    } else {
+                        self.runtime_error("Invalid variable name.");
+                        return InterpretResult::RuntimeError;
+                    }
                 }
                 OP_EQUAL => {
                     let b = self.stack.pop().unwrap();

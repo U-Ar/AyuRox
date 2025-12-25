@@ -1,7 +1,8 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER,
+        OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SUBTRACT,
+        OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
     table::StringTable,
@@ -73,11 +74,31 @@ impl<'a> Compiler<'a> {
     }
 
     fn declaration(&mut self) {
-        self.statement();
+        if self.parser.match_token(TokenType::Var) {
+            self.var_declaration();
+        } else {
+            self.statement();
+        }
 
         if self.parser.panic_mode {
             self.parser.synchronize();
         }
+    }
+
+    fn var_declaration(&mut self) {
+        let global = self.parse_variable("Expect variable name.");
+
+        if self.parser.match_token(TokenType::Equal) {
+            self.expression();
+        } else {
+            self.emit_byte(OP_NIL);
+        }
+        self.parser.consume(
+            TokenType::Semicolon,
+            "Expect ';' after variable declaration.",
+        );
+
+        self.define_variable(global);
     }
 
     fn statement(&mut self) {
@@ -123,6 +144,23 @@ impl<'a> Compiler<'a> {
                 infix(self);
             }
         }
+    }
+
+    fn parse_variable(&mut self, message: &str) -> u8 {
+        self.parser.consume(TokenType::Identifier, message);
+        self.identifier_constant(&self.parser.previous.clone())
+    }
+
+    fn identifier_constant(&mut self, name: &Token) -> u8 {
+        let value = Value::new_obj(
+            self.strings
+                .intern(self.parser.scanner.get_source(name.start, name.length)),
+        );
+        self.make_constant(value)
+    }
+
+    fn define_variable(&mut self, global: u8) {
+        self.emit_bytes(OP_DEFINE_GLOBAL, global);
     }
 
     #[cfg(feature = "debug_print_code")]
