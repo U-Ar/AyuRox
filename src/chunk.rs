@@ -14,7 +14,8 @@ pub const OP_MULTIPLY: OpCode = 9;
 pub const OP_DIVIDE: OpCode = 10;
 pub const OP_NOT: OpCode = 11;
 pub const OP_NEGATE: OpCode = 12;
-pub const OP_RETURN: OpCode = 13;
+pub const OP_PRINT: OpCode = 13;
+pub const OP_RETURN: OpCode = 14;
 
 pub struct Chunk {
     pub code: Vec<u8>,

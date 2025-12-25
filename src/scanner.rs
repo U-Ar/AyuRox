@@ -187,7 +187,7 @@ impl<'a> Scanner<'a> {
         self.source.chars().nth(self.current + 1).unwrap()
     }
 
-    fn match_char(&mut self, expected: char) -> bool {
+    pub fn match_char(&mut self, expected: char) -> bool {
         if self.is_at_end() {
             return false;
         }

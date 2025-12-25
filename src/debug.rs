@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     value::{ObjType, Value},
     vm::VM,
@@ -39,6 +39,7 @@ impl Chunk {
             OP_DIVIDE => Self::simple_instruction("OP_DIVIDE", offset),
             OP_NOT => Self::simple_instruction("OP_NOT", offset),
             OP_NEGATE => Self::simple_instruction("OP_NEGATE", offset),
+            OP_PRINT => Self::simple_instruction("OP_PRINT", offset),
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             _ => {
                 println!("Unknown opcode {}", self.code[offset]);

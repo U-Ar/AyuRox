@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     scanner::{Scanner, Token, TokenType},
     table::StringTable,
@@ -30,9 +30,11 @@ impl<'a> Compiler<'a> {
 
     pub fn compile(mut self) -> Option<RuntimeExpression> {
         self.parser.advance();
-        self.expression();
-        self.parser
-            .consume(TokenType::Eof, "Expect end of expression.");
+
+        while !self.parser.match_token(TokenType::Eof) {
+            self.declaration();
+        }
+
         self.end_compiler();
         Some(RuntimeExpression::new(*self.chunk, self.strings))
     }
@@ -68,6 +70,23 @@ impl<'a> Compiler<'a> {
     fn end_compiler(&mut self) {
         self.emit_return();
         self.debug_print_code();
+    }
+
+    fn declaration(&mut self) {
+        self.statement();
+    }
+
+    fn statement(&mut self) {
+        if self.parser.match_token(TokenType::Print) {
+            self.print_statement();
+        }
+    }
+
+    fn print_statement(&mut self) {
+        self.expression();
+        self.parser
+            .consume(TokenType::Semicolon, "Expect ';' after value.");
+        self.emit_byte(OP_PRINT);
     }
 
     fn expression(&mut self) {
@@ -174,6 +193,18 @@ impl<'a> Parser<'a> {
             return;
         }
         self.error_at_current(message.to_string());
+    }
+
+    fn check(&self, token_type: TokenType) -> bool {
+        self.current.token_type == token_type
+    }
+
+    pub fn match_token(&mut self, token_type: TokenType) -> bool {
+        if !self.check(token_type) {
+            return false;
+        }
+        self.advance();
+        true
     }
 }
 

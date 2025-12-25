@@ -1,7 +1,7 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GREATER, OP_LESS,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_PRINT, OP_RETURN, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -186,8 +186,11 @@ impl VM {
                     }
                     self.stack.push(Value::new_number(-value.as_number()));
                 }
-                OP_RETURN => {
+                OP_PRINT => {
                     print_value(&self.stack.pop().unwrap());
+                    println!();
+                }
+                OP_RETURN => {
                     return InterpretResult::Ok;
                 }
                 _ => {
