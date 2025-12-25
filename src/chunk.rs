@@ -21,7 +21,10 @@ pub const OP_DIVIDE: OpCode = 16;
 pub const OP_NOT: OpCode = 17;
 pub const OP_NEGATE: OpCode = 18;
 pub const OP_PRINT: OpCode = 19;
-pub const OP_RETURN: OpCode = 20;
+pub const OP_JUMP: OpCode = 20;
+pub const OP_JUMP_IF_FALSE: OpCode = 21;
+pub const OP_LOOP: OpCode = 22;
+pub const OP_RETURN: OpCode = 23;
 
 pub struct Chunk {
     pub code: Vec<u8>,

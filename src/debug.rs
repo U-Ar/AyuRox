@@ -1,8 +1,9 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
-        OP_GET_LOCAL, OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
-        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
+        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
+        OP_SUBTRACT, OP_TRUE,
     },
     value::{ObjType, Value},
     vm::VM,
@@ -47,6 +48,9 @@ impl Chunk {
             OP_NOT => Self::simple_instruction("OP_NOT", offset),
             OP_NEGATE => Self::simple_instruction("OP_NEGATE", offset),
             OP_PRINT => Self::simple_instruction("OP_PRINT", offset),
+            OP_JUMP => self.jump_instruction("OP_JUMP", 1, offset),
+            OP_JUMP_IF_FALSE => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
+            OP_LOOP => self.jump_instruction("OP_LOOP", -1, offset),
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             _ => {
                 println!("Unknown opcode {}", self.code[offset]);
@@ -72,6 +76,17 @@ impl Chunk {
         let slot = self.code[offset + 1];
         println!("{:-16} {:4}", name, slot);
         offset + 2
+    }
+
+    fn jump_instruction(&self, name: &str, sign: i32, offset: usize) -> usize {
+        let jump = ((self.code[offset + 1] as usize) << 8) | (self.code[offset + 2] as usize);
+        println!(
+            "{:-16} {:4} -> {}",
+            name,
+            offset,
+            (offset as i32) + 3 + (sign * (jump as i32))
+        );
+        offset + 3
     }
 }
 

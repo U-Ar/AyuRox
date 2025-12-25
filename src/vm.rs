@@ -1,8 +1,9 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
-        OP_GET_LOCAL, OP_GREATER, OP_LESS, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
-        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
+        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
+        OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -261,6 +262,20 @@ impl VM {
                     print_value(&self.stack.pop().unwrap());
                     println!();
                 }
+                OP_JUMP => {
+                    let offset = self.read_short() as usize;
+                    self.ip += offset;
+                }
+                OP_JUMP_IF_FALSE => {
+                    let offset = self.read_short() as usize;
+                    if is_falsey(self.peek(0)) {
+                        self.ip += offset;
+                    }
+                }
+                OP_LOOP => {
+                    let offset = self.read_short() as usize;
+                    self.ip -= offset;
+                }
                 OP_RETURN => {
                     return InterpretResult::Ok;
                 }
@@ -276,6 +291,11 @@ impl VM {
         let byte = self.chunk.code[self.ip];
         self.ip += 1;
         byte
+    }
+
+    fn read_short(&mut self) -> u16 {
+        self.ip += 2;
+        ((self.chunk.code[self.ip - 2] as u16) << 8) | (self.chunk.code[self.ip - 1] as u16)
     }
 
     fn read_constant(&mut self) -> Value {
