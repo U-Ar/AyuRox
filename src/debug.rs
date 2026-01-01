@@ -1,9 +1,9 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
-        OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
-        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
-        OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE,
+        OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
+        OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
     },
     value::{ObjType, Value},
     vm::VM,
@@ -51,6 +51,7 @@ impl Chunk {
             OP_JUMP => self.jump_instruction("OP_JUMP", 1, offset),
             OP_JUMP_IF_FALSE => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OP_LOOP => self.jump_instruction("OP_LOOP", -1, offset),
+            OP_CALL => self.byte_instruction("OP_CALL", offset),
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             _ => {
                 println!("Unknown opcode {}", self.code[offset]);
@@ -97,13 +98,11 @@ pub fn print_value(value: &Value) {
         Value::Number(n) => print!("{n}"),
         Value::Obj(obj) => match &obj.obj_type {
             ObjType::String(s) => print!("{s}"),
-            ObjType::Function(f) => print!(
-                "<fn {}>",
-                match &f.name.obj_type {
-                    ObjType::String(name) => name.as_str(),
-                    _ => "<script>",
-                }
+            ObjType::Function(f) => f.name.as_ref().map_or_else(
+                || print!("<script>"),
+                |name| print!("<fn {}>", name.as_string()),
             ),
+            ObjType::Native(_) => print!("<native fn>"),
         },
     }
 }
@@ -119,7 +118,8 @@ impl VM {
             print!(" ]");
         }
         println!();
-        self.chunk.disassemble_instruction(self.ip);
+        self.current_chunk
+            .disassemble_instruction(self.frames.last().unwrap().ip);
     }
 
     #[cfg(not(feature = "debug_trace_execution"))]

@@ -24,7 +24,7 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 #[global_allocator]
 static A: TrackingAllocator = TrackingAllocator;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Gc<T> {
     ptr: NonNull<T>,
 }
@@ -54,8 +54,8 @@ impl<T> std::ops::Deref for Gc<T> {
     }
 }
 
-impl<T> Drop for Gc<T> {
-    fn drop(&mut self) {
-        // Do nothing; memory will be freed during mark and sweep GC
+impl<T> std::ops::DerefMut for Gc<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.ptr.as_mut() }
     }
 }

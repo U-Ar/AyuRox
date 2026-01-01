@@ -18,14 +18,23 @@ pub struct Obj {
 pub enum ObjType {
     String(String),
     Function(ObjFunction),
+    Native(NativeFunction),
 }
 
 #[derive(Clone)]
 pub struct ObjFunction {
     pub arity: usize,
-    pub chunk: Chunk,
-    pub name: Gc<Obj>,
+    pub chunk: Gc<Chunk>,
+    pub name: Option<Gc<Obj>>,
 }
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum FunctionType {
+    Function,
+    Script,
+}
+
+type NativeFunction = fn(usize, &Vec<Value>) -> Value;
 
 impl Value {
     pub fn new_bool(b: bool) -> Self {
@@ -61,6 +70,12 @@ impl Value {
     pub fn is_obj_function(&self) -> bool {
         match self {
             Value::Obj(obj) => matches!(obj.obj_type, ObjType::Function(_)),
+            _ => false,
+        }
+    }
+    pub fn is_obj_native(&self) -> bool {
+        match self {
+            Value::Obj(obj) => matches!(obj.obj_type, ObjType::Native(_)),
             _ => false,
         }
     }
@@ -139,10 +154,30 @@ impl Obj {
             next: None,
         }
     }
-    pub fn new_function(name: Gc<Obj>, chunk: Chunk, arity: usize) -> Self {
+    pub fn new_function(function: ObjFunction) -> Self {
         Obj {
-            obj_type: ObjType::Function(ObjFunction { arity, chunk, name }),
+            obj_type: ObjType::Function(function),
             next: None,
+        }
+    }
+    pub fn new_native(native: NativeFunction) -> Self {
+        Obj {
+            obj_type: ObjType::Native(native),
+            next: None,
+        }
+    }
+    pub fn as_string(&self) -> &String {
+        if let ObjType::String(s) = &self.obj_type {
+            s
+        } else {
+            panic!("Object is not a string");
+        }
+    }
+    pub fn as_function(&self) -> &ObjFunction {
+        if let ObjType::Function(f) = &self.obj_type {
+            f
+        } else {
+            panic!("Object is not a function");
         }
     }
 }

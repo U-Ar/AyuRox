@@ -1,38 +1,95 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
-        OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
-        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
-        OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE,
+        OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
+        OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
     },
+    memory::Gc,
     scanner::{Scanner, Token, TokenType},
     table::StringTable,
-    value::Value,
+    value::{FunctionType, Obj, ObjFunction, Value},
     vm::RuntimeExpression,
 };
 
 pub struct Compiler<'a> {
     parser: Parser<'a>,
-    chunk: Box<Chunk>,
+
+    //chunk: Box<Chunk>,
+    // function: ObjFunction,
+    // function_type: FunctionType,
+    function_arena: Vec<FunctionScope>,
+
     strings: StringTable,
 
     locals: Vec<Local>,
     scope_depth: i32,
 }
 
+struct FunctionScope {
+    pub function_type: FunctionType,
+    pub function: ObjFunction,
+}
+
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
+        let locals = vec![Local {
+            name: Token {
+                token_type: TokenType::Identifier,
+                start: 0,
+                length: 0,
+                line: 0,
+                error_message: None,
+            },
+            depth: 0,
+        }];
+
+        let function_arena = vec![FunctionScope {
+            function_type: FunctionType::Script,
+            function: ObjFunction {
+                arity: 0,
+                chunk: Gc::new(Chunk::new()),
+                name: None,
+            },
+        }];
+
         Compiler {
             parser: Parser::new(Scanner::new(source)),
-            chunk: Box::new(Chunk::new()),
+            function_arena,
             strings: StringTable::new(),
-            locals: Vec::new(),
+            locals,
             scope_depth: 0,
         }
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
-        &mut self.chunk
+        &mut self.function_arena.last_mut().unwrap().function.chunk
+    }
+
+    fn begin_function_scope(&mut self, function_type: FunctionType) {
+        let name = if function_type == FunctionType::Function {
+            Some(
+                self.strings.intern(
+                    self.parser
+                        .scanner
+                        .get_source(self.parser.previous.start, self.parser.previous.length),
+                ),
+            )
+        } else {
+            None
+        };
+        self.function_arena.push(FunctionScope {
+            function_type,
+            function: ObjFunction {
+                arity: 0,
+                chunk: Gc::new(Chunk::new()),
+                name,
+            },
+        });
+    }
+
+    fn end_function_scope(&mut self) -> FunctionScope {
+        self.function_arena.pop().unwrap()
     }
 
     pub fn compile(mut self) -> Option<RuntimeExpression> {
@@ -43,7 +100,15 @@ impl<'a> Compiler<'a> {
         }
 
         self.end_compiler();
-        Some(RuntimeExpression::new(*self.chunk, self.strings))
+
+        if self.parser.had_error {
+            None
+        } else {
+            Some(RuntimeExpression::new(
+                self.function_arena[0].function.clone(),
+                self.strings,
+            ))
+        }
     }
 
     fn emit_byte(&mut self, byte: u8) {
@@ -75,6 +140,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_return(&mut self) {
+        self.emit_byte(OP_NIL);
         self.emit_byte(OP_RETURN);
     }
 
@@ -122,7 +188,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn declaration(&mut self) {
-        if self.parser.match_token(TokenType::Var) {
+        if self.parser.match_token(TokenType::Fun) {
+            self.fun_declaration();
+        } else if self.parser.match_token(TokenType::Var) {
             self.var_declaration();
         } else {
             self.statement();
@@ -131,6 +199,13 @@ impl<'a> Compiler<'a> {
         if self.parser.panic_mode {
             self.parser.synchronize();
         }
+    }
+
+    fn fun_declaration(&mut self) {
+        let global = self.parse_variable("Expect function name.");
+        self.mark_initialized();
+        self.function(FunctionType::Function);
+        self.define_variable(global);
     }
 
     fn var_declaration(&mut self) {
@@ -156,6 +231,8 @@ impl<'a> Compiler<'a> {
             self.for_statement();
         } else if self.parser.match_token(TokenType::If) {
             self.if_statement();
+        } else if self.parser.match_token(TokenType::Return) {
+            self.return_statement();
         } else if self.parser.match_token(TokenType::While) {
             self.while_statement();
         } else if self.parser.match_token(TokenType::LeftBrace) {
@@ -265,12 +342,62 @@ impl<'a> Compiler<'a> {
         self.patch_jump(else_jump);
     }
 
+    fn return_statement(&mut self) {
+        if self.function_arena.last().unwrap().function_type == FunctionType::Script {
+            self.parser
+                .error("Cannot return from top-level code.".to_string());
+        }
+
+        if self.parser.match_token(TokenType::Semicolon) {
+            self.emit_return();
+        } else {
+            self.expression();
+            self.parser
+                .consume(TokenType::Semicolon, "Expect ';' after return value.");
+            self.emit_byte(OP_RETURN);
+        }
+    }
+
     fn block(&mut self) {
         while !self.parser.check(TokenType::RightBrace) && !self.parser.check(TokenType::Eof) {
             self.declaration();
         }
         self.parser
             .consume(TokenType::RightBrace, "Expect '}' after block.");
+    }
+
+    fn function(&mut self, function_type: FunctionType) {
+        self.begin_function_scope(function_type);
+        self.begin_scope();
+
+        self.parser
+            .consume(TokenType::LeftParen, "Expect '(' after function name.");
+        if !self.parser.check(TokenType::RightParen) {
+            loop {
+                self.function_arena.last_mut().unwrap().function.arity += 1;
+                if self.function_arena.last().unwrap().function.arity > 255 {
+                    self.parser
+                        .error_at_current("Cannot have more than 255 parameters.".to_string());
+                }
+                let param_constant = self.parse_variable("Expect parameter name.");
+                self.define_variable(param_constant);
+
+                if !self.parser.match_token(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.parser
+            .consume(TokenType::RightParen, "Expect ')' after parameters.");
+
+        self.parser
+            .consume(TokenType::LeftBrace, "Expect '{' before function body.");
+        self.block();
+
+        let function = self.end_function_scope().function;
+        self.end_scope();
+
+        self.emit_constant(Value::new_obj(Gc::new(Obj::new_function(function))));
     }
 
     fn expression_statement(&mut self) {
@@ -388,7 +515,30 @@ impl<'a> Compiler<'a> {
         self.emit_bytes(OP_DEFINE_GLOBAL, global);
     }
 
+    fn argument_list(&mut self) -> u8 {
+        let mut arg_count = 0;
+        if !self.parser.check(TokenType::RightParen) {
+            loop {
+                self.expression();
+                if arg_count == 255 {
+                    self.parser
+                        .error("Cannot have more than 255 arguments.".to_string());
+                }
+                arg_count += 1;
+                if !self.parser.match_token(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.parser
+            .consume(TokenType::RightParen, "Expect ')' after arguments.");
+        arg_count
+    }
+
     fn mark_initialized(&mut self) {
+        if self.scope_depth == 0 {
+            return;
+        }
         let last_index = self.locals.len() - 1;
         self.locals[last_index].depth = self.scope_depth;
     }
@@ -414,7 +564,19 @@ impl<'a> Compiler<'a> {
     #[inline(always)]
     pub fn debug_print_code(&mut self) {
         if !self.parser.had_error {
-            self.current_chunk().disassemble("code");
+            let name = match self.function_arena.last().unwrap().function_type {
+                FunctionType::Function => self
+                    .function_arena
+                    .last()
+                    .unwrap()
+                    .function
+                    .name
+                    .as_ref()
+                    .map_or("<script>", |name| name.as_string()),
+                FunctionType::Script => "<script>",
+            }
+            .to_string();
+            self.current_chunk().disassemble(&name);
         }
     }
 
@@ -592,8 +754,8 @@ const fn init_parse_rules() -> [ParseRule; 256] {
 
     rules[TokenType::LeftParen as usize] = ParseRule {
         prefix: Some(grouping),
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(call),
+        precedence: Precedence::Call,
     };
     rules[TokenType::RightParen as usize] = ParseRule {
         prefix: None,
@@ -843,6 +1005,11 @@ fn binary(compiler: &mut Compiler, _can_assign: bool) {
         TokenType::Slash => compiler.emit_byte(OP_DIVIDE),
         _ => unreachable!(), // Unreachable.
     }
+}
+
+fn call(compiler: &mut Compiler, _can_assign: bool) {
+    let arg_count = compiler.argument_list();
+    compiler.emit_bytes(OP_CALL, arg_count);
 }
 
 fn literal(compiler: &mut Compiler, _can_assign: bool) {

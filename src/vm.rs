@@ -1,32 +1,42 @@
+use std::vec;
+
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL,
-        OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
-        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
-        OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE,
+        OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
+        OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
+    memory::Gc,
     table::{GlobalVariableTable, StringTable},
-    value::{ObjType, Value},
+    value::{Obj, ObjFunction, ObjType, Value},
 };
 
 pub struct VM {
-    pub chunk: Chunk,
-    pub ip: usize,
+    pub current_chunk: Gc<Chunk>,
+    pub frames: Vec<CallFrame>,
     pub stack: Vec<Value>,
     pub strings: StringTable,
     pub globals: GlobalVariableTable,
 }
 
+pub struct CallFrame {
+    pub function: Gc<Obj>,
+    // pub chunk: Gc<Chunk>, // cache the chunk for quick access
+    pub ip: usize,
+    pub slot_start: usize,
+}
+
 pub struct RuntimeExpression {
-    pub chunk: Chunk,
+    pub function: ObjFunction,
     pub strings: StringTable,
 }
 
 impl RuntimeExpression {
-    pub fn new(chunk: Chunk, strings: StringTable) -> Self {
-        RuntimeExpression { chunk, strings }
+    pub fn new(function: ObjFunction, strings: StringTable) -> Self {
+        RuntimeExpression { function, strings }
     }
 }
 
@@ -40,6 +50,7 @@ pub fn interpret(source: &str) -> InterpretResult {
     let compiler = Compiler::new(source);
     if let Some(runtime_expression) = compiler.compile() {
         let mut vm = VM::new(runtime_expression);
+        vm.define_native("clock", clock_native);
         vm.run()
     } else {
         InterpretResult::CompileError
@@ -54,12 +65,37 @@ fn is_falsey(value: &Value) -> bool {
     }
 }
 
+fn clock_native(_arg_count: usize, _args: &Vec<Value>) -> Value {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    Value::new_number(since_the_epoch.as_secs_f64())
+}
+
 impl VM {
     pub fn new(runtime_expression: RuntimeExpression) -> Self {
-        VM {
-            chunk: runtime_expression.chunk,
+        let mut stack = Vec::new();
+
+        let chunk_ptr = runtime_expression.function.chunk.clone();
+
+        let function_ptr = Gc::new(Obj {
+            obj_type: ObjType::Function(runtime_expression.function.clone()),
+            next: None,
+        });
+        stack.push(Value::new_obj(function_ptr.clone()));
+
+        let frames = vec![CallFrame {
+            function: function_ptr,
             ip: 0,
-            stack: Vec::new(),
+            slot_start: 0,
+        }];
+
+        VM {
+            current_chunk: chunk_ptr,
+            frames,
+            stack,
             strings: runtime_expression.strings,
             globals: GlobalVariableTable::new(),
         }
@@ -71,15 +107,77 @@ impl VM {
 
     pub fn runtime_error(&mut self, message: &str) {
         println!("{}", message);
-        let inst_idx = self.ip - 1;
-        let line = self.chunk.lines[inst_idx];
+        let frame = self.frames.last().unwrap();
+        let inst_idx = frame.ip - 1;
+        let line = self.current_chunk.lines[inst_idx];
         println!("[line {}] in script", line);
+
+        for frame in self.frames.iter().rev() {
+            let function = &frame.function;
+            let function_name = if let Some(name) = &function.as_function().name {
+                name.as_string().clone()
+            } else {
+                "<script>".to_string()
+            };
+            let inst_idx = frame.ip - 1;
+            let line = function.as_function().chunk.lines[inst_idx];
+            println!("[line {}] in {}", line, function_name);
+        }
+
         self.reset_stack();
+    }
+
+    pub fn define_native(&mut self, name: &str, function: fn(usize, &Vec<Value>) -> Value) {
+        self.stack
+            .push(Value::new_obj(Gc::new(Obj::new_native(function))));
+        self.globals.define(name, self.stack.pop().unwrap());
     }
 
     fn peek(&self, distance: usize) -> &Value {
         let len = self.stack.len();
         &self.stack[len - 1 - distance]
+    }
+
+    fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
+        if let Value::Obj(obj) = callee {
+            match &obj.obj_type {
+                ObjType::Function(function) => {
+                    return self.call(function, arg_count);
+                }
+                ObjType::Native(native) => {
+                    let args_start = self.stack.len() - arg_count;
+                    let result = native(arg_count, &self.stack);
+                    self.stack.truncate(args_start - 1);
+                    self.stack.push(result);
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        self.runtime_error("Can only call functions.");
+        false
+    }
+
+    fn call(&mut self, function: &ObjFunction, arg_count: usize) -> bool {
+        if arg_count != function.arity {
+            self.runtime_error(&format!(
+                "Expected {} arguments but got {}.",
+                function.arity, arg_count
+            ));
+            return false;
+        }
+
+        self.current_chunk = function.chunk.clone();
+        let frame = CallFrame {
+            function: Gc::new(Obj {
+                obj_type: ObjType::Function(function.clone()),
+                next: None,
+            }),
+            ip: 0,
+            slot_start: self.stack.len() - arg_count - 1,
+        };
+        self.frames.push(frame);
+        true
     }
 
     fn run(&mut self) -> InterpretResult {
@@ -106,13 +204,13 @@ impl VM {
                 }
                 OP_GET_LOCAL => {
                     let slot = self.read_byte() as usize;
-                    let value = self.stack[slot].clone();
+                    let value = self.stack[self.frames.last().unwrap().slot_start + slot].clone();
                     self.stack.push(value);
                 }
                 OP_SET_LOCAL => {
                     let slot = self.read_byte() as usize;
                     let value = self.peek(0).clone();
-                    self.stack[slot] = value;
+                    self.stack[self.frames.last().unwrap().slot_start + slot] = value;
                 }
                 OP_GET_GLOBAL => {
                     let constant = self.read_constant();
@@ -264,20 +362,36 @@ impl VM {
                 }
                 OP_JUMP => {
                     let offset = self.read_short() as usize;
-                    self.ip += offset;
+                    self.frames.last_mut().unwrap().ip += offset;
                 }
                 OP_JUMP_IF_FALSE => {
                     let offset = self.read_short() as usize;
                     if is_falsey(self.peek(0)) {
-                        self.ip += offset;
+                        self.frames.last_mut().unwrap().ip += offset;
                     }
                 }
                 OP_LOOP => {
                     let offset = self.read_short() as usize;
-                    self.ip -= offset;
+                    self.frames.last_mut().unwrap().ip -= offset;
+                }
+                OP_CALL => {
+                    let arg_count = self.read_byte() as usize;
+                    if !self.call_value(self.peek(arg_count).clone(), arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
                 }
                 OP_RETURN => {
-                    return InterpretResult::Ok;
+                    let result = self.stack.pop().unwrap();
+                    let frame = self.frames.pop().unwrap();
+                    if self.frames.is_empty() {
+                        self.stack.pop();
+                        return InterpretResult::Ok;
+                    }
+                    self.stack.truncate(frame.slot_start);
+                    self.stack.push(result);
+
+                    let frame = self.frames.last().unwrap();
+                    self.current_chunk = frame.function.as_function().chunk.clone();
                 }
                 _ => {
                     println!("Unknown opcode {}", instruction);
@@ -288,18 +402,21 @@ impl VM {
     }
 
     fn read_byte(&mut self) -> u8 {
-        let byte = self.chunk.code[self.ip];
-        self.ip += 1;
+        let frame = self.frames.last_mut().unwrap();
+        let byte = self.current_chunk.code[frame.ip];
+        frame.ip += 1;
         byte
     }
 
     fn read_short(&mut self) -> u16 {
-        self.ip += 2;
-        ((self.chunk.code[self.ip - 2] as u16) << 8) | (self.chunk.code[self.ip - 1] as u16)
+        let frame = self.frames.last_mut().unwrap();
+        frame.ip += 2;
+        ((self.current_chunk.code[frame.ip - 2] as u16) << 8)
+            | (self.current_chunk.code[frame.ip - 1] as u16)
     }
 
     fn read_constant(&mut self) -> Value {
         let constant_index = self.read_byte() as usize;
-        self.chunk.constants.values[constant_index].clone()
+        self.current_chunk.constants.values[constant_index].clone()
     }
 }
