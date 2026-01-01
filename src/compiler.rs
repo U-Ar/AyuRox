@@ -22,28 +22,17 @@ pub struct Compiler<'a> {
 
     strings: StringTable,
 
-    locals: Vec<Local>,
     scope_depth: i32,
 }
 
 struct FunctionScope {
     pub function_type: FunctionType,
     pub function: ObjFunction,
+    pub locals: Vec<Local>,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
-        let locals = vec![Local {
-            name: Token {
-                token_type: TokenType::Identifier,
-                start: 0,
-                length: 0,
-                line: 0,
-                error_message: None,
-            },
-            depth: 0,
-        }];
-
         let function_arena = vec![FunctionScope {
             function_type: FunctionType::Script,
             function: ObjFunction {
@@ -51,19 +40,41 @@ impl<'a> Compiler<'a> {
                 chunk: Gc::new(Chunk::new()),
                 name: None,
             },
+            locals: vec![Local {
+                name: Token {
+                    token_type: TokenType::Identifier,
+                    start: 0,
+                    length: 0,
+                    line: 0,
+                    error_message: None,
+                },
+                depth: 0,
+            }],
         }];
 
         Compiler {
             parser: Parser::new(Scanner::new(source)),
             function_arena,
             strings: StringTable::new(),
-            locals,
             scope_depth: 0,
         }
     }
 
-    fn current_chunk(&mut self) -> &mut Chunk {
+    #[allow(dead_code)]
+    fn current_chunk(&self) -> &Chunk {
+        &self.function_arena.last().unwrap().function.chunk
+    }
+
+    fn current_chunk_mut(&mut self) -> &mut Chunk {
         &mut self.function_arena.last_mut().unwrap().function.chunk
+    }
+
+    fn current_locals(&self) -> &Vec<Local> {
+        &self.function_arena.last().unwrap().locals
+    }
+
+    fn current_locals_mut(&mut self) -> &mut Vec<Local> {
+        &mut self.function_arena.last_mut().unwrap().locals
     }
 
     fn begin_function_scope(&mut self, function_type: FunctionType) {
@@ -85,6 +96,16 @@ impl<'a> Compiler<'a> {
                 chunk: Gc::new(Chunk::new()),
                 name,
             },
+            locals: vec![Local {
+                name: Token {
+                    token_type: TokenType::Identifier,
+                    start: 0,
+                    length: 0,
+                    line: 0,
+                    error_message: None,
+                },
+                depth: 0,
+            }],
         });
     }
 
@@ -99,7 +120,8 @@ impl<'a> Compiler<'a> {
             self.declaration();
         }
 
-        self.end_compiler();
+        self.emit_return();
+        self.debug_print_code();
 
         if self.parser.had_error {
             None
@@ -113,7 +135,7 @@ impl<'a> Compiler<'a> {
 
     fn emit_byte(&mut self, byte: u8) {
         let line = self.parser.previous.line;
-        self.current_chunk().write(byte, line);
+        self.current_chunk_mut().write(byte, line);
     }
 
     fn emit_bytes(&mut self, byte1: u8, byte2: u8) {
@@ -124,7 +146,7 @@ impl<'a> Compiler<'a> {
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_byte(OP_LOOP);
 
-        let offset = self.current_chunk().code.len() - loop_start + 2;
+        let offset = self.current_chunk_mut().code.len() - loop_start + 2;
         if offset > u16::MAX as usize {
             eprintln!("Loop body too large.");
         }
@@ -136,7 +158,7 @@ impl<'a> Compiler<'a> {
         self.emit_byte(instruction);
         self.emit_byte(0xff);
         self.emit_byte(0xff);
-        self.current_chunk().code.len() - 2
+        self.current_chunk_mut().code.len() - 2
     }
 
     fn emit_return(&mut self) {
@@ -150,27 +172,22 @@ impl<'a> Compiler<'a> {
     }
 
     fn patch_jump(&mut self, offset: usize) {
-        let jump = self.current_chunk().code.len() - offset - 2;
+        let jump = self.current_chunk_mut().code.len() - offset - 2;
         if jump > u16::MAX as usize {
             eprintln!("Too much code to jump over.");
         }
 
-        self.current_chunk().code[offset] = ((jump >> 8) & 0xff) as u8;
-        self.current_chunk().code[offset + 1] = (jump & 0xff) as u8;
+        self.current_chunk_mut().code[offset] = ((jump >> 8) & 0xff) as u8;
+        self.current_chunk_mut().code[offset + 1] = (jump & 0xff) as u8;
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {
-        let constant = self.current_chunk().add_constant(value);
+        let constant = self.current_chunk_mut().add_constant(value);
         if constant > 255 {
             eprintln!("Too many constants in one chunk.");
             return 0;
         }
         constant as u8
-    }
-
-    fn end_compiler(&mut self) {
-        self.emit_return();
-        self.debug_print_code();
     }
 
     fn begin_scope(&mut self) {
@@ -180,10 +197,11 @@ impl<'a> Compiler<'a> {
     fn end_scope(&mut self) {
         self.scope_depth -= 1;
 
-        while !self.locals.is_empty() && self.locals[self.locals.len() - 1].depth > self.scope_depth
+        while !self.current_locals_mut().is_empty()
+            && self.current_locals_mut().last().unwrap().depth > self.scope_depth
         {
             self.emit_byte(OP_POP);
-            self.locals.pop();
+            self.current_locals_mut().pop();
         }
     }
 
@@ -263,7 +281,7 @@ impl<'a> Compiler<'a> {
             self.expression_statement();
         }
 
-        let mut loop_start = self.current_chunk().code.len();
+        let mut loop_start = self.current_chunk_mut().code.len();
         let mut exit_jump = None;
         if !self.parser.match_token(TokenType::Semicolon) {
             self.expression();
@@ -279,7 +297,7 @@ impl<'a> Compiler<'a> {
 
         if !self.parser.match_token(TokenType::RightParen) {
             let body_jump = self.emit_jump(OP_JUMP);
-            let increment_start = self.current_chunk().code.len();
+            let increment_start = self.current_chunk_mut().code.len();
             self.expression();
             self.emit_byte(OP_POP);
             self.parser
@@ -301,7 +319,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn while_statement(&mut self) {
-        let loop_start = self.current_chunk().code.len();
+        let loop_start = self.current_chunk_mut().code.len();
         self.parser
             .consume(TokenType::LeftParen, "Expect '(' after 'while'.");
         self.expression();
@@ -394,6 +412,9 @@ impl<'a> Compiler<'a> {
             .consume(TokenType::LeftBrace, "Expect '{' before function body.");
         self.block();
 
+        self.emit_return();
+        self.debug_print_code();
+
         let function = self.end_function_scope().function;
         self.end_scope();
 
@@ -464,7 +485,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_local(&mut self, name: &Token) -> Option<usize> {
-        for (i, local) in self.locals.iter().enumerate().rev() {
+        for (i, local) in self.current_locals().iter().enumerate().rev() {
             if self.identifiers_equal(name, &local.name) {
                 if local.depth == -1 {
                     self.parser
@@ -483,28 +504,34 @@ impl<'a> Compiler<'a> {
 
         let name = self.parser.previous.clone();
 
-        for local in self.locals.iter().rev() {
+        let mut is_error = false;
+        for local in self.current_locals().iter().rev() {
             if local.depth != -1 && local.depth < self.scope_depth {
                 break;
             }
 
             if self.identifiers_equal(&name, &local.name) {
-                self.parser
-                    .error("Already a variable with this name in this scope.".to_string());
+                is_error = true;
+                break;
             }
+        }
+
+        if is_error {
+            self.parser
+                .error("Already a variable with this name in this scope.".to_string());
         }
 
         self.add_local(name);
     }
 
     fn add_local(&mut self, name: Token) {
-        if self.locals.len() >= 256 {
+        if self.current_locals().len() >= 256 {
             self.parser
                 .error("Too many local variables in function.".to_string());
             return;
         }
 
-        self.locals.push(Local { name, depth: -1 });
+        self.current_locals_mut().push(Local { name, depth: -1 });
     }
 
     fn define_variable(&mut self, global: u8) {
@@ -539,8 +566,7 @@ impl<'a> Compiler<'a> {
         if self.scope_depth == 0 {
             return;
         }
-        let last_index = self.locals.len() - 1;
-        self.locals[last_index].depth = self.scope_depth;
+        self.current_locals_mut().last_mut().unwrap().depth = self.scope_depth;
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
@@ -576,7 +602,7 @@ impl<'a> Compiler<'a> {
                 FunctionType::Script => "<script>",
             }
             .to_string();
-            self.current_chunk().disassemble(&name);
+            self.current_chunk_mut().disassemble(&name);
         }
     }
 
