@@ -28,7 +28,8 @@ pub const OP_JUMP_IF_FALSE: OpCode = 23;
 pub const OP_LOOP: OpCode = 24;
 pub const OP_CALL: OpCode = 25;
 pub const OP_CLOSURE: OpCode = 26;
-pub const OP_RETURN: OpCode = 27;
+pub const OP_CLOSE_UPVALUE: OpCode = 27;
+pub const OP_RETURN: OpCode = 28;
 
 #[derive(Clone)]
 pub struct Chunk {

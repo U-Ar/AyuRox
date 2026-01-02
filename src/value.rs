@@ -256,6 +256,13 @@ impl Obj {
             panic!("Object is not an upvalue");
         }
     }
+    pub fn as_upvalue_mut(&mut self) -> &mut ObjUpvalue {
+        if let ObjType::Upvalue(u) = &mut self.obj_type {
+            u
+        } else {
+            panic!("Object is not an upvalue");
+        }
+    }
 }
 
 #[derive(Clone)]

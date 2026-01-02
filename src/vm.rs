@@ -2,10 +2,11 @@ use std::{ops::DerefMut, vec};
 
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
-        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER, OP_JUMP,
-        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
-        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL,
+        OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER,
+        OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
+        OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT,
+        OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -20,11 +21,11 @@ pub struct VM {
     pub stack: Vec<Value>,
     pub strings: StringTable,
     pub globals: GlobalVariableTable,
+    pub open_upvalues: Option<Gc<Obj>>,
 }
 
 pub struct CallFrame {
     pub closure: Gc<Obj>,
-    // pub chunk: Gc<Chunk>, // cache the chunk for quick access
     pub ip: usize,
     pub slot_start: usize,
 }
@@ -108,6 +109,7 @@ impl VM {
             stack,
             strings: runtime_expression.strings,
             globals: GlobalVariableTable::new(),
+            open_upvalues: None,
         }
     }
 
@@ -195,11 +197,49 @@ impl VM {
 
     fn capture_upvalue(&mut self, local_index: u8) -> Gc<Obj> {
         let stack_index = self.frames.last().unwrap().slot_start + (local_index as usize);
-        Gc::new(Obj::new_upvalue(ObjUpvalue {
+
+        let mut prev_upvalue = None;
+        let mut upvalue = self.open_upvalues.clone();
+        while upvalue.is_some()
+            && upvalue.as_ref().unwrap().as_upvalue().location.unwrap() > stack_index
+        {
+            let next_upvalue = upvalue.as_ref().unwrap().as_upvalue().next.clone();
+            prev_upvalue = upvalue;
+            upvalue = next_upvalue;
+        }
+
+        if let Some(existing_upvalue) = upvalue.as_ref()
+            && existing_upvalue.as_upvalue().location.unwrap() == stack_index
+        {
+            return upvalue.unwrap();
+        }
+
+        let created_upvalue = Gc::new(Obj::new_upvalue(ObjUpvalue {
             location: Some(stack_index),
             closed: None,
-            next: None,
-        }))
+            next: upvalue,
+        }));
+
+        if let Some(prev) = &mut prev_upvalue {
+            prev.as_upvalue_mut().next = Some(created_upvalue.clone());
+        } else {
+            self.open_upvalues = Some(created_upvalue.clone());
+        }
+
+        created_upvalue
+    }
+
+    fn close_upvalues(&mut self, last_index: usize) {
+        while let Some(upvalue) = &mut self.open_upvalues {
+            if upvalue.as_upvalue().location.unwrap() >= last_index {
+                let closed_value = self.stack[upvalue.as_upvalue().location.unwrap()].clone();
+                upvalue.as_upvalue_mut().closed = Some(closed_value);
+                upvalue.as_upvalue_mut().location = None;
+                self.open_upvalues = upvalue.as_upvalue().next.clone();
+            } else {
+                break;
+            }
+        }
     }
 
     fn run(&mut self) -> InterpretResult {
@@ -291,12 +331,20 @@ impl VM {
                 }
                 OP_GET_UPVALUE => {
                     let slot = self.read_byte() as usize;
-                    let value =
-                        self.stack[self.frames.last().unwrap().closure.as_closure().upvalues[slot]
+                    let value = if let Some(location) =
+                        self.frames.last().unwrap().closure.as_closure().upvalues[slot]
                             .as_upvalue()
                             .location
-                            .unwrap()]
-                        .clone();
+                    {
+                        self.stack[location].clone()
+                    } else {
+                        self.frames.last().unwrap().closure.as_closure().upvalues[slot]
+                            .as_upvalue()
+                            .closed
+                            .as_ref()
+                            .unwrap()
+                            .clone()
+                    };
                     self.stack.push(value);
                 }
                 OP_SET_UPVALUE => {
@@ -460,8 +508,13 @@ impl VM {
                     self.runtime_error("Expected function for closure.");
                     return InterpretResult::RuntimeError;
                 }
+                OP_CLOSE_UPVALUE => {
+                    self.close_upvalues(self.stack.len() - 1);
+                    self.stack.pop();
+                }
                 OP_RETURN => {
                     let result = self.stack.pop().unwrap();
+                    self.close_upvalues(self.frames.last().unwrap().slot_start);
                     let frame = self.frames.pop().unwrap();
                     if self.frames.is_empty() {
                         self.stack.pop();

@@ -1,9 +1,10 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
-        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER, OP_JUMP,
-        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
-        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL,
+        OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER,
+        OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
+        OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT,
+        OP_TRUE,
     },
     memory::Gc,
     scanner::{Scanner, Token, TokenType},
@@ -48,6 +49,7 @@ impl<'a> Compiler<'a> {
                     error_message: None,
                 },
                 depth: 0,
+                is_captured: false,
             }],
             upvalues: Vec::new(),
         }];
@@ -106,6 +108,7 @@ impl<'a> Compiler<'a> {
                     error_message: None,
                 },
                 depth: 0,
+                is_captured: false,
             }],
             upvalues: Vec::new(),
         });
@@ -202,7 +205,11 @@ impl<'a> Compiler<'a> {
         while !self.current_locals_mut().is_empty()
             && self.current_locals_mut().last().unwrap().depth > self.scope_depth
         {
-            self.emit_byte(OP_POP);
+            if self.current_locals().last().unwrap().is_captured {
+                self.emit_byte(OP_CLOSE_UPVALUE);
+            } else {
+                self.emit_byte(OP_POP);
+            }
             self.current_locals_mut().pop();
         }
     }
@@ -417,10 +424,10 @@ impl<'a> Compiler<'a> {
         self.emit_return();
         self.debug_print_code();
 
+        self.end_scope();
         let function_scope = self.end_function_scope();
         let function = function_scope.function;
         let upvalues = function_scope.upvalues;
-        self.end_scope();
 
         let constant = self.make_constant(Value::new_obj(Gc::new(Obj::new_function(function))));
         self.emit_bytes(OP_CLOSURE, constant);
@@ -528,6 +535,7 @@ impl<'a> Compiler<'a> {
         let enclosing = arena_index - 1;
 
         if let Some(local_index) = self.resolve_local(name, enclosing) {
+            self.function_arena[enclosing].locals[local_index].is_captured = true;
             return Some(self.add_upvalue(local_index, true, arena_index));
         }
 
@@ -588,7 +596,11 @@ impl<'a> Compiler<'a> {
             return;
         }
 
-        self.current_locals_mut().push(Local { name, depth: -1 });
+        self.current_locals_mut().push(Local {
+            name,
+            depth: -1,
+            is_captured: false,
+        });
     }
 
     fn define_variable(&mut self, global: u8) {
@@ -827,6 +839,7 @@ struct ParseRule {
 struct Local {
     name: Token,
     depth: i32,
+    is_captured: bool,
 }
 
 #[derive(Clone)]
