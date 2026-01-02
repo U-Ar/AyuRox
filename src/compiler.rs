@@ -1,9 +1,9 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
-        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
-        OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER, OP_JUMP,
+        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
+        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     memory::Gc,
     scanner::{Scanner, Token, TokenType},
@@ -15,9 +15,6 @@ use crate::{
 pub struct Compiler<'a> {
     parser: Parser<'a>,
 
-    //chunk: Box<Chunk>,
-    // function: ObjFunction,
-    // function_type: FunctionType,
     function_arena: Vec<FunctionScope>,
 
     strings: StringTable,
@@ -29,6 +26,7 @@ struct FunctionScope {
     pub function_type: FunctionType,
     pub function: ObjFunction,
     pub locals: Vec<Local>,
+    pub upvalues: Vec<Upvalue>,
 }
 
 impl<'a> Compiler<'a> {
@@ -37,6 +35,7 @@ impl<'a> Compiler<'a> {
             function_type: FunctionType::Script,
             function: ObjFunction {
                 arity: 0,
+                upvalue_count: 0,
                 chunk: Gc::new(Chunk::new()),
                 name: None,
             },
@@ -50,6 +49,7 @@ impl<'a> Compiler<'a> {
                 },
                 depth: 0,
             }],
+            upvalues: Vec::new(),
         }];
 
         Compiler {
@@ -95,6 +95,7 @@ impl<'a> Compiler<'a> {
                 arity: 0,
                 chunk: Gc::new(Chunk::new()),
                 name,
+                upvalue_count: 0,
             },
             locals: vec![Local {
                 name: Token {
@@ -106,6 +107,7 @@ impl<'a> Compiler<'a> {
                 },
                 depth: 0,
             }],
+            upvalues: Vec::new(),
         });
     }
 
@@ -415,11 +417,18 @@ impl<'a> Compiler<'a> {
         self.emit_return();
         self.debug_print_code();
 
-        let function = self.end_function_scope().function;
+        let function_scope = self.end_function_scope();
+        let function = function_scope.function;
+        let upvalues = function_scope.upvalues;
         self.end_scope();
 
         let constant = self.make_constant(Value::new_obj(Gc::new(Obj::new_function(function))));
-        self.emit_bytes(OP_CLOSURE, constant)
+        self.emit_bytes(OP_CLOSURE, constant);
+
+        for upvalue in upvalues {
+            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+            self.emit_byte(upvalue.index);
+        }
     }
 
     fn expression_statement(&mut self) {
@@ -485,8 +494,17 @@ impl<'a> Compiler<'a> {
             == self.parser.scanner.get_source(b.start, b.length)
     }
 
-    fn resolve_local(&mut self, name: &Token) -> Option<usize> {
-        for (i, local) in self.current_locals().iter().enumerate().rev() {
+    fn resolve_current_local(&mut self, name: &Token) -> Option<usize> {
+        self.resolve_local(name, self.function_arena.len() - 1)
+    }
+
+    fn resolve_local(&mut self, name: &Token, arena_index: usize) -> Option<usize> {
+        for (i, local) in self.function_arena[arena_index]
+            .locals
+            .iter()
+            .enumerate()
+            .rev()
+        {
             if self.identifiers_equal(name, &local.name) {
                 if local.depth == -1 {
                     self.parser
@@ -496,6 +514,44 @@ impl<'a> Compiler<'a> {
             }
         }
         None
+    }
+
+    fn resolve_current_upvalue(&mut self, name: &Token) -> Option<usize> {
+        self.resolve_upvalue(name, self.function_arena.len() - 1)
+    }
+
+    fn resolve_upvalue(&mut self, name: &Token, arena_index: usize) -> Option<usize> {
+        if arena_index == 0 {
+            return None;
+        }
+
+        let enclosing = arena_index - 1;
+
+        if let Some(local_index) = self.resolve_local(name, enclosing) {
+            return Some(self.add_upvalue(local_index, true, arena_index));
+        }
+
+        if let Some(upvalue_index) = self.resolve_upvalue(name, enclosing) {
+            return Some(self.add_upvalue(upvalue_index, false, arena_index));
+        }
+
+        None
+    }
+
+    fn add_upvalue(&mut self, index: usize, is_local: bool, arena_index: usize) -> usize {
+        for (i, upvalue) in self.function_arena[arena_index].upvalues.iter().enumerate() {
+            if upvalue.index as usize == index && upvalue.is_local == is_local {
+                return i;
+            }
+        }
+
+        self.function_arena[arena_index].upvalues.push(Upvalue {
+            index: index as u8,
+            is_local,
+        });
+        self.function_arena[arena_index].function.upvalue_count += 1;
+
+        self.function_arena[arena_index].upvalues.len() - 1
     }
 
     fn declare_variable(&mut self) {
@@ -571,12 +627,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
-        let (arg, get_op, set_op) = match self.resolve_local(&name) {
+        let (arg, get_op, set_op) = match self.resolve_current_local(&name) {
             Some(local) => (local as u8, OP_GET_LOCAL, OP_SET_LOCAL),
-            None => {
-                let arg = self.identifier_constant(&name);
-                (arg, OP_GET_GLOBAL, OP_SET_GLOBAL)
-            }
+            None => match self.resolve_current_upvalue(&name) {
+                Some(upvalue) => (upvalue as u8, OP_GET_UPVALUE, OP_SET_UPVALUE),
+                None => {
+                    let arg = self.identifier_constant(&name);
+                    (arg, OP_GET_GLOBAL, OP_SET_GLOBAL)
+                }
+            },
         };
 
         if can_assign && self.parser.match_token(TokenType::Equal) {
@@ -768,6 +827,12 @@ struct ParseRule {
 struct Local {
     name: Token,
     depth: i32,
+}
+
+#[derive(Clone)]
+struct Upvalue {
+    index: u8,
+    is_local: bool,
 }
 
 const PARSE_RULES: [ParseRule; 256] = init_parse_rules();

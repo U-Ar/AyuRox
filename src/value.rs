@@ -20,11 +20,13 @@ pub enum ObjType {
     Function(ObjFunction),
     Native(NativeFunction),
     Closure(ObjClosure),
+    Upvalue(ObjUpvalue),
 }
 
 #[derive(Clone)]
 pub struct ObjFunction {
     pub arity: usize,
+    pub upvalue_count: usize,
     pub chunk: Gc<Chunk>,
     pub name: Option<Gc<Obj>>,
 }
@@ -32,6 +34,14 @@ pub struct ObjFunction {
 #[derive(Clone)]
 pub struct ObjClosure {
     pub function: Gc<Obj>,
+    pub upvalues: Vec<Gc<Obj>>,
+}
+
+#[derive(Clone)]
+pub struct ObjUpvalue {
+    pub location: Option<usize>,
+    pub closed: Option<Value>,
+    pub next: Option<Gc<Obj>>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -88,6 +98,12 @@ impl Value {
     pub fn is_obj_native(&self) -> bool {
         match self {
             Value::Obj(obj) => matches!(obj.obj_type, ObjType::Native(_)),
+            _ => false,
+        }
+    }
+    pub fn is_obj_upvalue(&self) -> bool {
+        match self {
+            Value::Obj(obj) => matches!(obj.obj_type, ObjType::Upvalue(_)),
             _ => false,
         }
     }
@@ -159,6 +175,17 @@ impl Value {
             panic!("Value is not an object");
         }
     }
+    pub fn as_upvalue(&self) -> &ObjUpvalue {
+        if let Value::Obj(obj) = self {
+            if let ObjType::Upvalue(u) = &obj.obj_type {
+                u
+            } else {
+                panic!("Object is not an upvalue");
+            }
+        } else {
+            panic!("Value is not an object");
+        }
+    }
     pub fn is_equal(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -195,6 +222,12 @@ impl Obj {
             next: None,
         }
     }
+    pub fn new_upvalue(upvalue: ObjUpvalue) -> Self {
+        Obj {
+            obj_type: ObjType::Upvalue(upvalue),
+            next: None,
+        }
+    }
     pub fn as_string(&self) -> &String {
         if let ObjType::String(s) = &self.obj_type {
             s
@@ -214,6 +247,13 @@ impl Obj {
             c
         } else {
             panic!("Object is not a closure");
+        }
+    }
+    pub fn as_upvalue(&self) -> &ObjUpvalue {
+        if let ObjType::Upvalue(u) = &self.obj_type {
+            u
+        } else {
+            panic!("Object is not an upvalue");
         }
     }
 }

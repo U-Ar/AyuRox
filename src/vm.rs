@@ -1,17 +1,17 @@
-use std::vec;
+use std::{ops::DerefMut, vec};
 
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
-        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
-        OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER, OP_JUMP,
+        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
+        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
     memory::Gc,
     table::{GlobalVariableTable, StringTable},
-    value::{Obj, ObjClosure, ObjFunction, ObjType, Value},
+    value::{Obj, ObjClosure, ObjFunction, ObjType, ObjUpvalue, Value},
 };
 
 pub struct VM {
@@ -89,6 +89,7 @@ impl VM {
         let closure_ptr = Gc::new(Obj {
             obj_type: ObjType::Closure(ObjClosure {
                 function: function_ptr,
+                upvalues: Vec::new(),
             }),
             next: None,
         });
@@ -192,6 +193,15 @@ impl VM {
         true
     }
 
+    fn capture_upvalue(&mut self, local_index: u8) -> Gc<Obj> {
+        let stack_index = self.frames.last().unwrap().slot_start + (local_index as usize);
+        Gc::new(Obj::new_upvalue(ObjUpvalue {
+            location: Some(stack_index),
+            closed: None,
+            next: None,
+        }))
+    }
+
     fn run(&mut self) -> InterpretResult {
         loop {
             self.debug_trace_execution();
@@ -277,6 +287,33 @@ impl VM {
                     } else {
                         self.runtime_error("Invalid variable name.");
                         return InterpretResult::RuntimeError;
+                    }
+                }
+                OP_GET_UPVALUE => {
+                    let slot = self.read_byte() as usize;
+                    let value =
+                        self.stack[self.frames.last().unwrap().closure.as_closure().upvalues[slot]
+                            .as_upvalue()
+                            .location
+                            .unwrap()]
+                        .clone();
+                    self.stack.push(value);
+                }
+                OP_SET_UPVALUE => {
+                    let slot = self.read_byte() as usize;
+                    if let Obj {
+                        obj_type: ObjType::Closure(closure),
+                        ..
+                    } = self.frames.last_mut().unwrap().closure.deref_mut()
+                    {
+                        let upvalue = &mut closure.upvalues[slot];
+                        if let Obj {
+                            obj_type: ObjType::Upvalue(upvalue),
+                            ..
+                        } = upvalue.deref_mut()
+                        {
+                            upvalue.location = Some(self.stack.len() - 1);
+                        }
                     }
                 }
                 OP_EQUAL => {
@@ -398,9 +435,24 @@ impl VM {
                     if let Value::Obj(obj) = constant
                         && let ObjType::Function(_) = &obj.obj_type
                     {
+                        let mut upvalues = Vec::new();
+                        for _i in 0..obj.as_function().upvalue_count {
+                            let is_local = self.read_byte();
+                            let index = self.read_byte();
+                            if is_local == 1 {
+                                upvalues.push(self.capture_upvalue(index));
+                            } else {
+                                upvalues.push(
+                                    self.frames.last().unwrap().closure.as_closure().upvalues
+                                        [index as usize]
+                                        .clone(),
+                                );
+                            }
+                        }
                         self.stack
                             .push(Value::new_obj(Gc::new(Obj::new_closure(ObjClosure {
                                 function: obj,
+                                upvalues,
                             }))));
                         continue;
                     }

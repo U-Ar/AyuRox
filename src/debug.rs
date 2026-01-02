@@ -1,9 +1,9 @@
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
-        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
-        OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER, OP_JUMP,
+        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP,
+        OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     value::{ObjType, Value},
     vm::VM,
@@ -38,6 +38,8 @@ impl Chunk {
             OP_GET_GLOBAL => self.constant_instruction("OP_GET_GLOBAL", offset),
             OP_DEFINE_GLOBAL => self.constant_instruction("OP_DEFINE_GLOBAL", offset),
             OP_SET_GLOBAL => self.constant_instruction("OP_SET_GLOBAL", offset),
+            OP_GET_UPVALUE => self.byte_instruction("OP_GET_UPVALUE", offset),
+            OP_SET_UPVALUE => self.byte_instruction("OP_SET_UPVALUE", offset),
             OP_EQUAL => Self::simple_instruction("OP_EQUAL", offset),
             OP_GREATER => Self::simple_instruction("OP_GREATER", offset),
             OP_LESS => Self::simple_instruction("OP_LESS", offset),
@@ -59,6 +61,20 @@ impl Chunk {
                 print!("{:-16} {:4} '", "OP_CLOSURE", constant_index);
                 print_value(&self.constants.values[constant_index]);
                 println!();
+
+                let function = self.constants.values[constant_index].as_obj().as_function();
+                for _ in 0..function.upvalue_count {
+                    let is_local = self.code[offset];
+                    offset += 1;
+                    let index = self.code[offset];
+                    offset += 1;
+                    println!(
+                        "{:04}      |                     {} {:4}",
+                        offset - 2,
+                        if is_local == 1 { "local" } else { "upvalue" },
+                        index
+                    );
+                }
                 offset
             }
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
@@ -118,6 +134,9 @@ pub fn print_value(value: &Value) {
                     || print!("<script>"),
                     |name| print!("<fn {}>", name.as_string()),
                 )
+            }
+            ObjType::Upvalue(_) => {
+                print!("upvalue")
             }
         },
     }
