@@ -19,6 +19,7 @@ pub enum ObjType {
     String(String),
     Function(ObjFunction),
     Native(NativeFunction),
+    Closure(ObjClosure),
 }
 
 #[derive(Clone)]
@@ -26,6 +27,11 @@ pub struct ObjFunction {
     pub arity: usize,
     pub chunk: Gc<Chunk>,
     pub name: Option<Gc<Obj>>,
+}
+
+#[derive(Clone)]
+pub struct ObjClosure {
+    pub function: Gc<Obj>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -70,6 +76,12 @@ impl Value {
     pub fn is_obj_function(&self) -> bool {
         match self {
             Value::Obj(obj) => matches!(obj.obj_type, ObjType::Function(_)),
+            _ => false,
+        }
+    }
+    pub fn is_obj_closure(&self) -> bool {
+        match self {
+            Value::Obj(obj) => matches!(obj.obj_type, ObjType::Closure(_)),
             _ => false,
         }
     }
@@ -136,6 +148,17 @@ impl Value {
             panic!("Value is not an object");
         }
     }
+    pub fn as_closure(&self) -> &ObjClosure {
+        if let Value::Obj(obj) = self {
+            if let ObjType::Closure(c) = &obj.obj_type {
+                c
+            } else {
+                panic!("Object is not a closure");
+            }
+        } else {
+            panic!("Value is not an object");
+        }
+    }
     pub fn is_equal(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -166,6 +189,12 @@ impl Obj {
             next: None,
         }
     }
+    pub fn new_closure(closure: ObjClosure) -> Self {
+        Obj {
+            obj_type: ObjType::Closure(closure),
+            next: None,
+        }
+    }
     pub fn as_string(&self) -> &String {
         if let ObjType::String(s) = &self.obj_type {
             s
@@ -178,6 +207,13 @@ impl Obj {
             f
         } else {
             panic!("Object is not a function");
+        }
+    }
+    pub fn as_closure(&self) -> &ObjClosure {
+        if let ObjType::Closure(c) = &self.obj_type {
+            c
+        } else {
+            panic!("Object is not a closure");
         }
     }
 }

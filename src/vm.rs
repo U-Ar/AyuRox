@@ -2,16 +2,16 @@ use std::vec;
 
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CALL, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE,
-        OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
-        OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
+        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
+        OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
     memory::Gc,
     table::{GlobalVariableTable, StringTable},
-    value::{Obj, ObjFunction, ObjType, Value},
+    value::{Obj, ObjClosure, ObjFunction, ObjType, Value},
 };
 
 pub struct VM {
@@ -23,7 +23,7 @@ pub struct VM {
 }
 
 pub struct CallFrame {
-    pub function: Gc<Obj>,
+    pub closure: Gc<Obj>,
     // pub chunk: Gc<Chunk>, // cache the chunk for quick access
     pub ip: usize,
     pub slot_start: usize,
@@ -86,8 +86,17 @@ impl VM {
         });
         stack.push(Value::new_obj(function_ptr.clone()));
 
+        let closure_ptr = Gc::new(Obj {
+            obj_type: ObjType::Closure(ObjClosure {
+                function: function_ptr,
+            }),
+            next: None,
+        });
+        stack.pop();
+        stack.push(Value::new_obj(closure_ptr.clone()));
+
         let frames = vec![CallFrame {
-            function: function_ptr,
+            closure: closure_ptr,
             ip: 0,
             slot_start: 0,
         }];
@@ -113,14 +122,15 @@ impl VM {
         println!("[line {}] in script", line);
 
         for frame in self.frames.iter().rev() {
-            let function = &frame.function;
-            let function_name = if let Some(name) = &function.as_function().name {
-                name.as_string().clone()
-            } else {
-                "<script>".to_string()
-            };
+            let closure = &frame.closure;
+            let function_name =
+                if let Some(name) = &closure.as_closure().function.as_function().name {
+                    name.as_string().clone()
+                } else {
+                    "<script>".to_string()
+                };
             let inst_idx = frame.ip - 1;
-            let line = function.as_function().chunk.lines[inst_idx];
+            let line = closure.as_closure().function.as_function().chunk.lines[inst_idx];
             println!("[line {}] in {}", line, function_name);
         }
 
@@ -141,15 +151,15 @@ impl VM {
     fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
         if let Value::Obj(obj) = callee {
             match &obj.obj_type {
-                ObjType::Function(function) => {
-                    return self.call(function, arg_count);
-                }
                 ObjType::Native(native) => {
                     let args_start = self.stack.len() - arg_count;
                     let result = native(arg_count, &self.stack);
                     self.stack.truncate(args_start - 1);
                     self.stack.push(result);
                     return true;
+                }
+                ObjType::Closure(closure) => {
+                    return self.call(closure, arg_count);
                 }
                 _ => {}
             }
@@ -158,7 +168,9 @@ impl VM {
         false
     }
 
-    fn call(&mut self, function: &ObjFunction, arg_count: usize) -> bool {
+    fn call(&mut self, closure: &ObjClosure, arg_count: usize) -> bool {
+        let function = closure.function.as_function();
+
         if arg_count != function.arity {
             self.runtime_error(&format!(
                 "Expected {} arguments but got {}.",
@@ -169,8 +181,8 @@ impl VM {
 
         self.current_chunk = function.chunk.clone();
         let frame = CallFrame {
-            function: Gc::new(Obj {
-                obj_type: ObjType::Function(function.clone()),
+            closure: Gc::new(Obj {
+                obj_type: ObjType::Closure(closure.clone()),
                 next: None,
             }),
             ip: 0,
@@ -380,6 +392,22 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
                 }
+                OP_CLOSURE => {
+                    let constant = self.read_constant();
+
+                    if let Value::Obj(obj) = constant
+                        && let ObjType::Function(_) = &obj.obj_type
+                    {
+                        self.stack
+                            .push(Value::new_obj(Gc::new(Obj::new_closure(ObjClosure {
+                                function: obj,
+                            }))));
+                        continue;
+                    }
+
+                    self.runtime_error("Expected function for closure.");
+                    return InterpretResult::RuntimeError;
+                }
                 OP_RETURN => {
                     let result = self.stack.pop().unwrap();
                     let frame = self.frames.pop().unwrap();
@@ -391,7 +419,13 @@ impl VM {
                     self.stack.push(result);
 
                     let frame = self.frames.last().unwrap();
-                    self.current_chunk = frame.function.as_function().chunk.clone();
+                    self.current_chunk = frame
+                        .closure
+                        .as_closure()
+                        .function
+                        .as_function()
+                        .chunk
+                        .clone();
                 }
                 _ => {
                     println!("Unknown opcode {}", instruction);

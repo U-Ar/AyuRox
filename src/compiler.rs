@@ -1,9 +1,9 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CALL, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE,
-        OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
-        OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
+        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
+        OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
     },
     memory::Gc,
     scanner::{Scanner, Token, TokenType},
@@ -418,7 +418,8 @@ impl<'a> Compiler<'a> {
         let function = self.end_function_scope().function;
         self.end_scope();
 
-        self.emit_constant(Value::new_obj(Gc::new(Obj::new_function(function))));
+        let constant = self.make_constant(Value::new_obj(Gc::new(Obj::new_function(function))));
+        self.emit_bytes(OP_CLOSURE, constant)
     }
 
     fn expression_statement(&mut self) {

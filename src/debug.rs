@@ -1,9 +1,9 @@
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CALL, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE,
-        OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
-        OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL,
+        OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
+        OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SUBTRACT, OP_TRUE,
     },
     value::{ObjType, Value},
     vm::VM,
@@ -52,6 +52,15 @@ impl Chunk {
             OP_JUMP_IF_FALSE => self.jump_instruction("OP_JUMP_IF_FALSE", 1, offset),
             OP_LOOP => self.jump_instruction("OP_LOOP", -1, offset),
             OP_CALL => self.byte_instruction("OP_CALL", offset),
+            OP_CLOSURE => {
+                let mut offset = offset + 1;
+                let constant_index = self.code[offset] as usize;
+                offset += 1;
+                print!("{:-16} {:4} '", "OP_CLOSURE", constant_index);
+                print_value(&self.constants.values[constant_index]);
+                println!();
+                offset
+            }
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             _ => {
                 println!("Unknown opcode {}", self.code[offset]);
@@ -103,6 +112,13 @@ pub fn print_value(value: &Value) {
                 |name| print!("<fn {}>", name.as_string()),
             ),
             ObjType::Native(_) => print!("<native fn>"),
+            ObjType::Closure(c) => {
+                let function = c.function.as_function();
+                function.name.as_ref().map_or_else(
+                    || print!("<script>"),
+                    |name| print!("<fn {}>", name.as_string()),
+                )
+            }
         },
     }
 }
