@@ -213,7 +213,7 @@ impl VM {
                 _ => {}
             }
         }
-        self.runtime_error("Can only call functions.");
+        self.runtime_error("Can only call functions and classes.");
         false
     }
 
