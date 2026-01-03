@@ -4,9 +4,9 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
-        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
-        OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
+        OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -14,8 +14,8 @@ use crate::{
         ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_global_table, mark_object,
         mark_value, remove_white_strings, sweep, trace_reference,
     },
-    table::{GlobalVariableTable, StringTable},
-    value::{Obj, ObjClass, ObjClosure, ObjFunction, ObjType, ObjUpvalue, Value},
+    table::{FieldTable, GlobalVariableTable, StringTable},
+    value::{Obj, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjType, ObjUpvalue, Value},
 };
 
 pub struct VM {
@@ -178,6 +178,15 @@ impl VM {
                 }
                 ObjType::Closure(closure) => {
                     return self.call(closure, arg_count);
+                }
+                ObjType::Class(_) => {
+                    let len = self.stack.len();
+                    self.stack[len - arg_count - 1] =
+                        Value::new_obj(self.new_managed_obj(Obj::new_instance(ObjInstance {
+                            class: obj.clone(),
+                            fields: FieldTable::new(),
+                        })));
+                    return true;
                 }
                 _ => {}
             }
@@ -373,6 +382,49 @@ impl VM {
                             upvalue.location = Some(self.stack.len() - 1);
                         }
                     }
+                }
+                OP_GET_PROPERTY => {
+                    if !self.peek(0).is_obj_instance() {
+                        self.runtime_error("Only instances have properties.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let byte = self.read_byte();
+                    let name = match &self.current_chunk.constants.values[byte as usize] {
+                        Value::Obj(obj) => obj.clone(),
+                        _ => unreachable!(),
+                    };
+
+                    let top = self.stack.pop().unwrap();
+                    let instance = top.as_instance();
+
+                    if let Some(value) = instance.fields.get(name.as_string().as_str()) {
+                        self.stack.push(value.clone());
+                    } else {
+                        self.runtime_error(&format!("Undefined property '{}'.", name.as_string()));
+                        return InterpretResult::RuntimeError;
+                    };
+                }
+                OP_SET_PROPERTY => {
+                    if !self.peek(1).is_obj_instance() {
+                        self.runtime_error("Only instances have fields.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let byte = self.read_byte();
+                    let name = match &self.current_chunk.constants.values[byte as usize] {
+                        Value::Obj(obj) => obj.clone(),
+                        _ => unreachable!(),
+                    };
+                    let value = self.stack.pop().unwrap();
+
+                    let mut instance = self.stack.pop().unwrap();
+                    let instance = instance.as_instance_mut();
+
+                    instance
+                        .fields
+                        .insert(name.as_string().clone(), value.clone());
+                    self.stack.push(value);
                 }
                 OP_EQUAL => {
                     let b = self.stack.pop().unwrap();

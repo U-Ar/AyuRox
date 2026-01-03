@@ -3,7 +3,7 @@ use std::ops::DerefMut;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::table::{GlobalVariableTable, StringTable};
+use crate::table::{FieldTable, GlobalVariableTable, StringTable};
 use crate::value::{Obj, ObjType, Value, ValueArray};
 
 struct TrackingAllocator;
@@ -113,6 +113,12 @@ pub fn mark_global_table(global_table: &mut GlobalVariableTable, gc_gray_stack: 
     }
 }
 
+pub fn mark_field_table(field_table: &mut FieldTable, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+    for value in field_table.table.values_mut() {
+        mark_value(value, gc_gray_stack);
+    }
+}
+
 pub fn trace_reference(gc_gray_stack: &mut Vec<Gc<Obj>>) {
     while let Some(obj) = gc_gray_stack.pop() {
         blacken_object(obj, gc_gray_stack);
@@ -146,6 +152,10 @@ pub fn blacken_object(mut obj: Gc<Obj>, gc_gray_stack: &mut Vec<Gc<Obj>>) {
             if let Some(closed) = &mut upvalue.closed {
                 mark_value(closed, gc_gray_stack);
             }
+        }
+        ObjType::Instance(instance) => {
+            mark_object(instance.class.clone(), gc_gray_stack);
+            mark_field_table(&mut instance.fields, gc_gray_stack);
         }
         ObjType::String(_) | ObjType::Native(_) | ObjType::Class(_) => {}
     }

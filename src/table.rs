@@ -5,6 +5,7 @@ use crate::{
     value::{Obj, Value},
 };
 
+#[derive(Clone)]
 pub struct BuildHasherFNV {}
 
 pub struct FNVHasher {
@@ -100,6 +101,33 @@ impl GlobalVariableTable {
 }
 
 impl Default for GlobalVariableTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldTable {
+    pub table: HashMap<String, Value, BuildHasherFNV>,
+}
+
+impl FieldTable {
+    pub fn new() -> Self {
+        FieldTable {
+            table: HashMap::with_hasher(BuildHasherFNV::new()),
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.table.get(name)
+    }
+
+    pub fn insert(&mut self, name: String, value: Value) -> Option<Value> {
+        self.table.insert(name, value)
+    }
+}
+
+impl Default for FieldTable {
     fn default() -> Self {
         Self::new()
     }

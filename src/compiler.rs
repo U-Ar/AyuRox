@@ -4,9 +4,9 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
-        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
-        OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
+        OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     memory::{
         ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_object, mark_value_array,
@@ -976,8 +976,8 @@ const fn init_parse_rules() -> [ParseRule; 256] {
     };
     rules[TokenType::Dot as usize] = ParseRule {
         prefix: None,
-        infix: None,
-        precedence: Precedence::None,
+        infix: Some(dot),
+        precedence: Precedence::Call,
     };
     rules[TokenType::Minus as usize] = ParseRule {
         prefix: Some(unary),
@@ -1248,4 +1248,18 @@ fn or(compiler: &mut Compiler, _can_assign: bool) {
 
     compiler.parse_precedence(Precedence::Or);
     compiler.patch_jump(end_jump);
+}
+
+fn dot(compiler: &mut Compiler, can_assign: bool) {
+    compiler
+        .parser
+        .consume(TokenType::Identifier, "Expect property name after '.'.");
+    let name = compiler.identifier_constant(&compiler.parser.previous.clone());
+
+    if can_assign && compiler.parser.match_token(TokenType::Equal) {
+        compiler.expression();
+        compiler.emit_bytes(OP_SET_PROPERTY, name);
+    } else {
+        compiler.emit_bytes(OP_GET_PROPERTY, name);
+    }
 }

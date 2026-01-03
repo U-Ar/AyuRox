@@ -2,9 +2,9 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
-        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
-        OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
+        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
+        OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     value::{ObjType, Value},
     vm::VM,
@@ -41,6 +41,8 @@ impl Chunk {
             OP_SET_GLOBAL => self.constant_instruction("OP_SET_GLOBAL", offset),
             OP_GET_UPVALUE => self.byte_instruction("OP_GET_UPVALUE", offset),
             OP_SET_UPVALUE => self.byte_instruction("OP_SET_UPVALUE", offset),
+            OP_GET_PROPERTY => self.constant_instruction("OP_GET_PROPERTY", offset),
+            OP_SET_PROPERTY => self.constant_instruction("OP_SET_PROPERTY", offset),
             OP_EQUAL => Self::simple_instruction("OP_EQUAL", offset),
             OP_GREATER => Self::simple_instruction("OP_GREATER", offset),
             OP_LESS => Self::simple_instruction("OP_LESS", offset),
@@ -143,6 +145,9 @@ pub fn print_value(value: &Value) {
             }
             ObjType::Class(class) => {
                 print!("class {}", class.name.as_string())
+            }
+            ObjType::Instance(instance) => {
+                print!("instance of {}", instance.class.as_class().name.as_string())
             }
         },
     }
