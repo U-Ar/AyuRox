@@ -1,4 +1,4 @@
-use std::{ops::DerefMut, vec};
+use std::{ops::DerefMut, sync::atomic::Ordering, vec};
 
 use crate::{
     chunk::{
@@ -10,7 +10,10 @@ use crate::{
     },
     compiler::Compiler,
     debug::print_value,
-    memory::Gc,
+    memory::{
+        ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_global_table, mark_object,
+        mark_value, remove_white_strings, sweep, trace_reference,
+    },
     table::{GlobalVariableTable, StringTable},
     value::{Obj, ObjClosure, ObjFunction, ObjType, ObjUpvalue, Value},
 };
@@ -22,6 +25,7 @@ pub struct VM {
     pub strings: StringTable,
     pub globals: GlobalVariableTable,
     pub open_upvalues: Option<Gc<Obj>>,
+    pub objects: Option<Gc<Obj>>,
 }
 
 pub struct CallFrame {
@@ -33,11 +37,16 @@ pub struct CallFrame {
 pub struct RuntimeExpression {
     pub function: ObjFunction,
     pub strings: StringTable,
+    pub objects: Option<Gc<Obj>>,
 }
 
 impl RuntimeExpression {
-    pub fn new(function: ObjFunction, strings: StringTable) -> Self {
-        RuntimeExpression { function, strings }
+    pub fn new(function: ObjFunction, strings: StringTable, objects: Option<Gc<Obj>>) -> Self {
+        RuntimeExpression {
+            function,
+            strings,
+            objects,
+        }
     }
 }
 
@@ -49,10 +58,13 @@ pub enum InterpretResult {
 
 pub fn interpret(source: &str) -> InterpretResult {
     let compiler = Compiler::new(source);
-    if let Some(runtime_expression) = compiler.compile() {
+
+    let mut gc_gray_stack = Vec::new();
+
+    if let Some(runtime_expression) = compiler.compile(&mut gc_gray_stack) {
         let mut vm = VM::new(runtime_expression);
         vm.define_native("clock", clock_native);
-        vm.run()
+        vm.run(&mut gc_gray_stack)
     } else {
         InterpretResult::CompileError
     }
@@ -77,28 +89,23 @@ fn clock_native(_arg_count: usize, _args: &Vec<Value>) -> Value {
 
 impl VM {
     pub fn new(runtime_expression: RuntimeExpression) -> Self {
-        let mut stack = Vec::new();
+        let stack = Vec::new();
 
         let chunk_ptr = runtime_expression.function.chunk.clone();
 
-        let function_ptr = Gc::new(Obj {
-            obj_type: ObjType::Function(runtime_expression.function.clone()),
-            next: None,
-        });
-        stack.push(Value::new_obj(function_ptr.clone()));
+        let objects = runtime_expression.objects;
 
-        let closure_ptr = Gc::new(Obj {
-            obj_type: ObjType::Closure(ObjClosure {
-                function: function_ptr,
-                upvalues: Vec::new(),
-            }),
-            next: None,
-        });
-        stack.pop();
-        stack.push(Value::new_obj(closure_ptr.clone()));
+        let mut function_ptr = Gc::new(Obj::new_function(runtime_expression.function.clone()));
+        function_ptr.next = objects;
+
+        let mut closure_ptr = Gc::new(Obj::new_closure(ObjClosure {
+            function: function_ptr.clone(),
+            upvalues: Vec::new(),
+        }));
+        closure_ptr.next = Some(function_ptr);
 
         let frames = vec![CallFrame {
-            closure: closure_ptr,
+            closure: closure_ptr.clone(),
             ip: 0,
             slot_start: 0,
         }];
@@ -110,7 +117,15 @@ impl VM {
             strings: runtime_expression.strings,
             globals: GlobalVariableTable::new(),
             open_upvalues: None,
+            objects: Some(closure_ptr),
         }
+    }
+
+    pub fn new_managed_obj(&mut self, mut obj: Obj) -> Gc<Obj> {
+        obj.next = self.objects.clone();
+        let gc_obj = Gc::new(obj);
+        self.objects = Some(gc_obj.clone());
+        gc_obj
     }
 
     pub fn reset_stack(&mut self) {
@@ -141,8 +156,8 @@ impl VM {
     }
 
     pub fn define_native(&mut self, name: &str, function: fn(usize, &Vec<Value>) -> Value) {
-        self.stack
-            .push(Value::new_obj(Gc::new(Obj::new_native(function))));
+        let native = self.new_managed_obj(Obj::new_native(function));
+        self.stack.push(Value::new_obj(native));
         self.globals.define(name, self.stack.pop().unwrap());
     }
 
@@ -184,10 +199,7 @@ impl VM {
 
         self.current_chunk = function.chunk.clone();
         let frame = CallFrame {
-            closure: Gc::new(Obj {
-                obj_type: ObjType::Closure(closure.clone()),
-                next: None,
-            }),
+            closure: self.new_managed_obj(Obj::new_closure(closure.clone())),
             ip: 0,
             slot_start: self.stack.len() - arg_count - 1,
         };
@@ -214,7 +226,7 @@ impl VM {
             return upvalue.unwrap();
         }
 
-        let created_upvalue = Gc::new(Obj::new_upvalue(ObjUpvalue {
+        let created_upvalue = self.new_managed_obj(Obj::new_upvalue(ObjUpvalue {
             location: Some(stack_index),
             closed: None,
             next: upvalue,
@@ -242,9 +254,10 @@ impl VM {
         }
     }
 
-    fn run(&mut self) -> InterpretResult {
+    fn run(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) -> InterpretResult {
         loop {
             self.debug_trace_execution();
+            self.safe_point(gc_gray_stack);
 
             let instruction = self.read_byte();
             match instruction {
@@ -277,7 +290,6 @@ impl VM {
                 OP_GET_GLOBAL => {
                     let constant = self.read_constant();
                     if let Value::Obj(obj) = constant {
-                        #[allow(irrefutable_let_patterns)]
                         if let ObjType::String(name) = &obj.obj_type {
                             if let Some(value) = self.globals.get(name) {
                                 self.stack.push(value.clone());
@@ -297,7 +309,6 @@ impl VM {
                 OP_DEFINE_GLOBAL => {
                     let constant = self.read_constant();
                     if let Value::Obj(obj) = constant {
-                        #[allow(irrefutable_let_patterns)]
                         if let ObjType::String(name) = &obj.obj_type {
                             let value = self.stack.pop().unwrap();
                             self.globals.define(name, value);
@@ -313,7 +324,6 @@ impl VM {
                 OP_SET_GLOBAL => {
                     let constant = self.read_constant();
                     if let Value::Obj(obj) = constant {
-                        #[allow(irrefutable_let_patterns)]
                         if let ObjType::String(name) = &obj.obj_type {
                             let value = self.stack.pop().unwrap();
                             if !self.globals.set(name, value) {
@@ -394,7 +404,16 @@ impl VM {
                         let b = self.stack.pop().unwrap();
                         let a = self.stack.pop().unwrap();
                         let result = format!("{}{}", a.as_string(), b.as_string());
-                        let obj = Value::new_obj(self.strings.intern(&result));
+
+                        let string = if let Some(interned) = self.strings.get(&result) {
+                            interned.clone()
+                        } else {
+                            let new_string = self.new_managed_obj(Obj::new_string(result.clone()));
+                            self.strings.insert(result, new_string.clone());
+                            new_string
+                        };
+
+                        let obj = Value::new_obj(string);
                         self.stack.push(obj);
                         continue;
                     } else if self.peek(0).is_number() && self.peek(1).is_number() {
@@ -497,16 +516,16 @@ impl VM {
                                 );
                             }
                         }
-                        self.stack
-                            .push(Value::new_obj(Gc::new(Obj::new_closure(ObjClosure {
-                                function: obj,
-                                upvalues,
-                            }))));
-                        continue;
-                    }
+                        let closure = self.new_managed_obj(Obj::new_closure(ObjClosure {
+                            function: obj,
+                            upvalues,
+                        }));
 
-                    self.runtime_error("Expected function for closure.");
-                    return InterpretResult::RuntimeError;
+                        self.stack.push(Value::new_obj(closure));
+                    } else {
+                        self.runtime_error("Expected function for closure.");
+                        return InterpretResult::RuntimeError;
+                    }
                 }
                 OP_CLOSE_UPVALUE => {
                     self.close_upvalues(self.stack.len() - 1);
@@ -557,5 +576,55 @@ impl VM {
     fn read_constant(&mut self) -> Value {
         let constant_index = self.read_byte() as usize;
         self.current_chunk.constants.values[constant_index].clone()
+    }
+
+    // --- GC methods ---
+    pub fn safe_point(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+        if GC_REQUESTED.swap(false, Ordering::Relaxed) {
+            self.collect_garbage(gc_gray_stack);
+        }
+    }
+    fn collect_garbage(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+        #[cfg(feature = "debug_log_gc")]
+        let before = {
+            println!("-- gc begin");
+            ALLOCATED.load(Ordering::Relaxed)
+        };
+
+        self.mark_roots(gc_gray_stack);
+        trace_reference(gc_gray_stack);
+        remove_white_strings(&mut self.strings);
+        sweep(&mut self.objects);
+
+        let next_gc = ALLOCATED.load(Ordering::Relaxed) * GC_HEAP_GROW_FACTOR;
+        NEXT_GC.store(next_gc, Ordering::Relaxed);
+
+        #[cfg(feature = "debug_log_gc")]
+        {
+            println!("-- gc end");
+            let after = ALLOCATED.load(Ordering::Relaxed);
+            println!(
+                "   collected {} bytes (from {} to {}) next at {}",
+                before.saturating_sub(after),
+                before,
+                after,
+                next_gc
+            );
+        }
+    }
+    fn mark_roots(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+        for value in &mut self.stack {
+            mark_value(value, gc_gray_stack);
+        }
+
+        for frame in &mut self.frames {
+            mark_object(frame.closure.clone(), gc_gray_stack);
+        }
+
+        if let Some(upvalue) = &self.open_upvalues {
+            mark_object(upvalue.clone(), gc_gray_stack);
+        }
+
+        mark_global_table(&mut self.globals, gc_gray_stack);
     }
 }

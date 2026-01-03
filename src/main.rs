@@ -1,9 +1,6 @@
-use std::{env::args, sync::atomic::Ordering};
+use std::env::args;
 
-use ayurox::{
-    memory::ALLOCATED,
-    vm::{InterpretResult, interpret},
-};
+use ayurox::vm::{InterpretResult, interpret};
 
 fn repl() {
     loop {
@@ -45,9 +42,4 @@ fn main() {
         eprintln!("Usage: ayurox [script]\n");
         std::process::exit(64);
     }
-
-    println!(
-        "Allocated memory: {} bytes",
-        ALLOCATED.load(Ordering::SeqCst)
-    );
 }

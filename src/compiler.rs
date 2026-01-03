@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL,
@@ -6,7 +8,10 @@ use crate::{
         OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT,
         OP_TRUE,
     },
-    memory::Gc,
+    memory::{
+        ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_object, mark_value_array,
+        remove_white_strings, sweep, trace_reference,
+    },
     scanner::{Scanner, Token, TokenType},
     table::StringTable,
     value::{FunctionType, Obj, ObjFunction, Value},
@@ -16,14 +21,16 @@ use crate::{
 pub struct Compiler<'a> {
     parser: Parser<'a>,
 
-    function_arena: Vec<FunctionScope>,
+    pub function_arena: Vec<FunctionScope>,
 
     strings: StringTable,
 
     scope_depth: i32,
+
+    objects: Option<Gc<Obj>>,
 }
 
-struct FunctionScope {
+pub struct FunctionScope {
     pub function_type: FunctionType,
     pub function: ObjFunction,
     pub locals: Vec<Local>,
@@ -59,7 +66,34 @@ impl<'a> Compiler<'a> {
             function_arena,
             strings: StringTable::new(),
             scope_depth: 0,
+            objects: None,
         }
+    }
+
+    fn new_managed_obj(&mut self, mut obj: Obj) -> Gc<Obj> {
+        obj.next = self.objects.clone();
+        let gc_obj = Gc::new(obj);
+        self.objects = Some(gc_obj.clone());
+        gc_obj
+    }
+
+    fn intern_source(&mut self, start: usize, length: usize) -> Gc<Obj> {
+        {
+            let string = self.parser.scanner.get_source(start, length);
+            if let Some(obj) = self.strings.get(string) {
+                return obj.clone();
+            }
+        }
+
+        let obj = self.new_managed_obj(Obj::new_string(
+            self.parser.scanner.get_source(start, length).to_string(),
+        ));
+
+        self.strings.insert(
+            self.parser.scanner.get_source(start, length).to_string(),
+            obj.clone(),
+        );
+        obj
     }
 
     #[allow(dead_code)]
@@ -81,13 +115,7 @@ impl<'a> Compiler<'a> {
 
     fn begin_function_scope(&mut self, function_type: FunctionType) {
         let name = if function_type == FunctionType::Function {
-            Some(
-                self.strings.intern(
-                    self.parser
-                        .scanner
-                        .get_source(self.parser.previous.start, self.parser.previous.length),
-                ),
-            )
+            Some(self.intern_source(self.parser.previous.start, self.parser.previous.length))
         } else {
             None
         };
@@ -118,11 +146,12 @@ impl<'a> Compiler<'a> {
         self.function_arena.pop().unwrap()
     }
 
-    pub fn compile(mut self) -> Option<RuntimeExpression> {
+    pub fn compile(mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) -> Option<RuntimeExpression> {
         self.parser.advance();
 
         while !self.parser.match_token(TokenType::Eof) {
             self.declaration();
+            self.safe_point(gc_gray_stack);
         }
 
         self.emit_return();
@@ -134,6 +163,7 @@ impl<'a> Compiler<'a> {
             Some(RuntimeExpression::new(
                 self.function_arena[0].function.clone(),
                 self.strings,
+                self.objects,
             ))
         }
     }
@@ -429,7 +459,9 @@ impl<'a> Compiler<'a> {
         let function = function_scope.function;
         let upvalues = function_scope.upvalues;
 
-        let constant = self.make_constant(Value::new_obj(Gc::new(Obj::new_function(function))));
+        let obj = self.new_managed_obj(Obj::new_function(function));
+        let constant = self.make_constant(Value::new_obj(obj));
+
         self.emit_bytes(OP_CLOSURE, constant);
 
         for upvalue in upvalues {
@@ -486,11 +518,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn identifier_constant(&mut self, name: &Token) -> u8 {
-        let value = Value::new_obj(
-            self.strings
-                .intern(self.parser.scanner.get_source(name.start, name.length)),
-        );
-        self.make_constant(value)
+        let obj = self.intern_source(name.start, name.length);
+        self.make_constant(Value::new_obj(obj))
     }
 
     fn identifiers_equal(&self, a: &Token, b: &Token) -> bool {
@@ -683,6 +712,52 @@ impl<'a> Compiler<'a> {
     pub fn debug_print_code(&mut self) {
         // No-op when debug printing is disabled
     }
+
+    // --- GC methods ---
+    fn safe_point(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+        if GC_REQUESTED.swap(false, Ordering::Relaxed) {
+            self.collect_garbage(gc_gray_stack);
+        }
+    }
+
+    fn collect_garbage(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+        #[cfg(feature = "debug_log_gc")]
+        let before = {
+            println!("-- compile time gc begin");
+            ALLOCATED.load(Ordering::Relaxed)
+        };
+
+        self.mark_roots(gc_gray_stack);
+        trace_reference(gc_gray_stack);
+        remove_white_strings(&mut self.strings);
+        sweep(&mut self.objects);
+
+        let next_gc = ALLOCATED.load(Ordering::Relaxed) * GC_HEAP_GROW_FACTOR;
+        NEXT_GC.store(next_gc, Ordering::Relaxed);
+
+        #[cfg(feature = "debug_log_gc")]
+        {
+            println!("-- compile time gc end");
+            let after = ALLOCATED.load(Ordering::Relaxed);
+
+            println!(
+                "   collected {} bytes (from {} to {}) next at {}",
+                before.saturating_sub(after),
+                before,
+                after,
+                next_gc
+            );
+        }
+    }
+
+    fn mark_roots(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+        for function_scope in &mut self.function_arena {
+            if let Some(name) = &function_scope.function.name {
+                mark_object(name.clone(), gc_gray_stack);
+            }
+            mark_value_array(&mut function_scope.function.chunk.constants, gc_gray_stack);
+        }
+    }
 }
 
 struct Parser<'a> {
@@ -836,14 +911,14 @@ struct ParseRule {
 }
 
 #[derive(Clone)]
-struct Local {
+pub struct Local {
     name: Token,
     depth: i32,
     is_captured: bool,
 }
 
 #[derive(Clone)]
-struct Upvalue {
+pub struct Upvalue {
     index: u8,
     is_local: bool,
 }
@@ -1127,11 +1202,11 @@ fn literal(compiler: &mut Compiler, _can_assign: bool) {
 }
 
 fn string(compiler: &mut Compiler, _can_assign: bool) {
-    let ptr = compiler.strings.intern(compiler.parser.scanner.get_source(
+    let obj = compiler.intern_source(
         compiler.parser.previous.start + 1,
         compiler.parser.previous.length - 2,
-    ));
-    compiler.emit_constant(Value::new_obj(ptr));
+    );
+    compiler.emit_constant(Value::new_obj(obj));
 }
 
 fn variable(compiler: &mut Compiler, can_assign: bool) {

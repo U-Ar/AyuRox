@@ -1,6 +1,6 @@
 use crate::{chunk::Chunk, memory::Gc};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Bool(bool),
     Nil,
@@ -8,13 +8,14 @@ pub enum Value {
     Obj(Gc<Obj>),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Obj {
     pub obj_type: ObjType,
+    pub is_marked: bool,
     pub next: Option<Gc<Obj>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ObjType {
     String(String),
     Function(ObjFunction),
@@ -23,7 +24,7 @@ pub enum ObjType {
     Upvalue(ObjUpvalue),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ObjFunction {
     pub arity: usize,
     pub upvalue_count: usize,
@@ -31,13 +32,13 @@ pub struct ObjFunction {
     pub name: Option<Gc<Obj>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ObjClosure {
     pub function: Gc<Obj>,
     pub upvalues: Vec<Gc<Obj>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ObjUpvalue {
     pub location: Option<usize>,
     pub closed: Option<Value>,
@@ -201,30 +202,35 @@ impl Obj {
     pub fn new_string(s: String) -> Self {
         Obj {
             obj_type: ObjType::String(s),
+            is_marked: false,
             next: None,
         }
     }
     pub fn new_function(function: ObjFunction) -> Self {
         Obj {
             obj_type: ObjType::Function(function),
+            is_marked: false,
             next: None,
         }
     }
     pub fn new_native(native: NativeFunction) -> Self {
         Obj {
             obj_type: ObjType::Native(native),
+            is_marked: false,
             next: None,
         }
     }
     pub fn new_closure(closure: ObjClosure) -> Self {
         Obj {
             obj_type: ObjType::Closure(closure),
+            is_marked: false,
             next: None,
         }
     }
     pub fn new_upvalue(upvalue: ObjUpvalue) -> Self {
         Obj {
             obj_type: ObjType::Upvalue(upvalue),
+            is_marked: false,
             next: None,
         }
     }
@@ -265,7 +271,7 @@ impl Obj {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ValueArray {
     pub values: Vec<Value>,
 }

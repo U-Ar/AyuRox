@@ -55,14 +55,12 @@ impl StringTable {
         }
     }
 
-    pub fn intern(&mut self, string: &str) -> Gc<Obj> {
-        if let Some(obj) = self.table.get(string) {
-            return obj.clone();
-        }
+    pub fn get(&self, string: &str) -> Option<&Gc<Obj>> {
+        self.table.get(string)
+    }
 
-        let obj = Gc::new(Obj::new_string(string.to_string()));
-        self.table.insert(string.to_string(), obj.clone());
-        obj
+    pub fn insert(&mut self, string: String, obj: Gc<Obj>) -> Option<Gc<Obj>> {
+        self.table.insert(string, obj)
     }
 }
 

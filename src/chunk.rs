@@ -31,7 +31,7 @@ pub const OP_CLOSURE: OpCode = 26;
 pub const OP_CLOSE_UPVALUE: OpCode = 27;
 pub const OP_RETURN: OpCode = 28;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     pub code: Vec<u8>,
     pub lines: Vec<usize>,
