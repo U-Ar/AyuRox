@@ -420,9 +420,6 @@ impl<'a> Compiler<'a> {
             self.emit_byte(OP_POP);
         }
 
-        self.parser
-            .consume(TokenType::RightParen, "Expect ')' after for clauses.");
-
         if !self.parser.match_token(TokenType::RightParen) {
             let body_jump = self.emit_jump(OP_JUMP);
             let increment_start = self.current_chunk_mut().code.len();

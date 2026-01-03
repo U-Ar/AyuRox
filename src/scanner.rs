@@ -184,7 +184,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn is_at_end(&self) -> bool {
-        self.current >= self.source.len()
+        self.current >= self.source.chars().count()
     }
 
     pub fn advance(&mut self) -> char {

@@ -10,7 +10,7 @@ fun callCaller() {
 
   fun f() {
     // Commenting the next line out prevents the bug!
-    capturedVar = "after";
+    // capturedVar = "after";
 
     // Returning anything also fixes it, even nil:
     //return nil;
