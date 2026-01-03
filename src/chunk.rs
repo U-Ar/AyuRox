@@ -29,11 +29,12 @@ pub const OP_JUMP: OpCode = 24;
 pub const OP_JUMP_IF_FALSE: OpCode = 25;
 pub const OP_LOOP: OpCode = 26;
 pub const OP_CALL: OpCode = 27;
-pub const OP_CLOSURE: OpCode = 28;
-pub const OP_CLOSE_UPVALUE: OpCode = 29;
-pub const OP_RETURN: OpCode = 30;
-pub const OP_CLASS: OpCode = 31;
-pub const OP_METHOD: OpCode = 32;
+pub const OP_INVOKE: OpCode = 28;
+pub const OP_CLOSURE: OpCode = 29;
+pub const OP_CLOSE_UPVALUE: OpCode = 30;
+pub const OP_RETURN: OpCode = 31;
+pub const OP_CLASS: OpCode = 32;
+pub const OP_METHOD: OpCode = 33;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {

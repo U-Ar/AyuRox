@@ -4,8 +4,8 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_INVOKE, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
+        OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
         OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
@@ -305,6 +305,37 @@ impl VM {
         }
     }
 
+    fn invoke(&mut self, method_name: Gc<Obj>, arg_count: usize) -> bool {
+        let receiver = self.peek(arg_count).clone();
+        if !receiver.is_obj_instance() {
+            self.runtime_error("Only instances have methods.");
+            return false;
+        }
+
+        let instance = receiver.as_instance();
+        if let Some(field) = instance.fields.get(method_name.as_string().as_str()) {
+            *self.peek_mut(arg_count) = field.clone();
+            return self.call_value(field.clone(), arg_count);
+        }
+
+        self.invoke_from_class(instance.class.as_class(), method_name, arg_count)
+    }
+
+    fn invoke_from_class(
+        &mut self,
+        class: &ObjClass,
+        method_name: Gc<Obj>,
+        arg_count: usize,
+    ) -> bool {
+        let name = method_name.as_string();
+        if let Some(method) = class.methods.get(name.as_str()) {
+            self.call(method.as_closure(), arg_count)
+        } else {
+            self.runtime_error(&format!("Undefined property '{}'.", name));
+            false
+        }
+    }
+
     fn run(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) -> InterpretResult {
         loop {
             self.debug_trace_execution();
@@ -589,6 +620,18 @@ impl VM {
                 OP_CALL => {
                     let arg_count = self.read_byte() as usize;
                     if !self.call_value(self.peek(arg_count).clone(), arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+                OP_INVOKE => {
+                    let byte = self.read_byte();
+                    let method_name = match &self.current_chunk.constants.values[byte as usize] {
+                        Value::Obj(obj) => obj.clone(),
+                        _ => unreachable!(),
+                    };
+                    let arg_count = self.read_byte() as usize;
+
+                    if !self.invoke(method_name, arg_count) {
                         return InterpretResult::RuntimeError;
                     }
                 }

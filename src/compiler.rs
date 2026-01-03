@@ -4,8 +4,8 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_INVOKE, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
+        OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
         OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     memory::{
@@ -1341,6 +1341,10 @@ fn dot(compiler: &mut Compiler, can_assign: bool) {
     if can_assign && compiler.parser.match_token(TokenType::Equal) {
         compiler.expression();
         compiler.emit_bytes(OP_SET_PROPERTY, name);
+    } else if compiler.parser.match_token(TokenType::LeftParen) {
+        let arg_count = compiler.argument_list();
+        compiler.emit_bytes(OP_INVOKE, name);
+        compiler.emit_byte(arg_count);
     } else {
         compiler.emit_bytes(OP_GET_PROPERTY, name);
     }
