@@ -453,7 +453,12 @@ impl VM {
                             ..
                         } = upvalue.deref_mut()
                         {
-                            upvalue.location = Some(self.stack.len() - 1);
+                            if upvalue.location.is_some() {
+                                upvalue.location = Some(self.stack.len() - 1);
+                            } else {
+                                let value = self.stack.last().unwrap().clone();
+                                upvalue.closed = Some(value);
+                            }
                         }
                     }
                 }
@@ -733,7 +738,7 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
                     let superclass = self.peek(1).as_class();
-                    
+
                     let mut subclass_ptr = self.peek(0).as_gc_obj();
                     let subclass = subclass_ptr.as_class_mut();
 
