@@ -408,7 +408,7 @@ impl VM {
                     let constant = self.read_constant();
                     if let Value::Obj(obj) = constant {
                         if let ObjType::String(name) = &obj.obj_type {
-                            let value = self.stack.pop().unwrap();
+                            let value = self.peek(0).clone();
                             if !self.globals.set(name, value) {
                                 self.runtime_error(&format!("Undefined variable '{}'.", name));
                                 return InterpretResult::RuntimeError;
