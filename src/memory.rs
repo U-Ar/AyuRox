@@ -3,7 +3,7 @@ use std::ops::DerefMut;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::table::{FieldTable, GlobalVariableTable, StringTable};
+use crate::table::{StringTable, ValueTable};
 use crate::value::{Obj, ObjType, Value, ValueArray};
 
 struct TrackingAllocator;
@@ -107,14 +107,8 @@ pub fn mark_value_array(value_array: &mut ValueArray, gc_gray_stack: &mut Vec<Gc
     }
 }
 
-pub fn mark_global_table(global_table: &mut GlobalVariableTable, gc_gray_stack: &mut Vec<Gc<Obj>>) {
-    for value in global_table.table.values_mut() {
-        mark_value(value, gc_gray_stack);
-    }
-}
-
-pub fn mark_field_table(field_table: &mut FieldTable, gc_gray_stack: &mut Vec<Gc<Obj>>) {
-    for value in field_table.table.values_mut() {
+pub fn mark_value_table(value_table: &mut ValueTable, gc_gray_stack: &mut Vec<Gc<Obj>>) {
+    for value in value_table.table.values_mut() {
         mark_value(value, gc_gray_stack);
     }
 }
@@ -155,9 +149,16 @@ pub fn blacken_object(mut obj: Gc<Obj>, gc_gray_stack: &mut Vec<Gc<Obj>>) {
         }
         ObjType::Instance(instance) => {
             mark_object(instance.class.clone(), gc_gray_stack);
-            mark_field_table(&mut instance.fields, gc_gray_stack);
+            mark_value_table(&mut instance.fields, gc_gray_stack);
         }
-        ObjType::String(_) | ObjType::Native(_) | ObjType::Class(_) => {}
+        ObjType::Class(class) => {
+            mark_value_table(&mut class.methods, gc_gray_stack);
+        }
+        ObjType::BoundMethod(bound_method) => {
+            mark_value(&mut bound_method.receiver, gc_gray_stack);
+            mark_object(bound_method.method.clone(), gc_gray_stack);
+        }
+        ObjType::String(_) | ObjType::Native(_) => {}
     }
 }
 

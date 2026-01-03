@@ -5,17 +5,20 @@ use crate::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
         OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
-        OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
     memory::{
-        ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_global_table, mark_object,
-        mark_value, remove_white_strings, sweep, trace_reference,
+        ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_object, mark_value,
+        mark_value_table, remove_white_strings, sweep, trace_reference,
     },
-    table::{FieldTable, GlobalVariableTable, StringTable},
-    value::{Obj, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjType, ObjUpvalue, Value},
+    table::{StringTable, ValueTable},
+    value::{
+        Obj, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjType, ObjUpvalue,
+        Value,
+    },
 };
 
 pub struct VM {
@@ -23,7 +26,7 @@ pub struct VM {
     pub frames: Vec<CallFrame>,
     pub stack: Vec<Value>,
     pub strings: StringTable,
-    pub globals: GlobalVariableTable,
+    pub globals: ValueTable,
     pub open_upvalues: Option<Gc<Obj>>,
     pub objects: Option<Gc<Obj>>,
 }
@@ -115,7 +118,7 @@ impl VM {
             frames,
             stack,
             strings: runtime_expression.strings,
-            globals: GlobalVariableTable::new(),
+            globals: ValueTable::new(),
             open_upvalues: None,
             objects: Some(closure_ptr),
         }
@@ -158,7 +161,8 @@ impl VM {
     pub fn define_native(&mut self, name: &str, function: fn(usize, &Vec<Value>) -> Value) {
         let native = self.new_managed_obj(Obj::new_native(function));
         self.stack.push(Value::new_obj(native));
-        self.globals.define(name, self.stack.pop().unwrap());
+        self.globals
+            .insert(name.to_string(), self.stack.pop().unwrap());
     }
 
     fn peek(&self, distance: usize) -> &Value {
@@ -166,9 +170,18 @@ impl VM {
         &self.stack[len - 1 - distance]
     }
 
+    fn peek_mut(&mut self, distance: usize) -> &mut Value {
+        let len = self.stack.len();
+        &mut self.stack[len - 1 - distance]
+    }
+
     fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
         if let Value::Obj(obj) = callee {
             match &obj.obj_type {
+                ObjType::BoundMethod(bound_method) => {
+                    *self.peek_mut(arg_count) = bound_method.receiver.clone();
+                    return self.call(bound_method.method.as_closure(), arg_count);
+                }
                 ObjType::Native(native) => {
                     let args_start = self.stack.len() - arg_count;
                     let result = native(arg_count, &self.stack);
@@ -179,13 +192,21 @@ impl VM {
                 ObjType::Closure(closure) => {
                     return self.call(closure, arg_count);
                 }
-                ObjType::Class(_) => {
+                ObjType::Class(class) => {
                     let len = self.stack.len();
                     self.stack[len - arg_count - 1] =
                         Value::new_obj(self.new_managed_obj(Obj::new_instance(ObjInstance {
                             class: obj.clone(),
-                            fields: FieldTable::new(),
+                            fields: ValueTable::new(),
                         })));
+
+                    if let Some(initializer) = class.methods.get("init") {
+                        return self.call(initializer.as_closure(), arg_count);
+                    } else if arg_count != 0 {
+                        self.runtime_error(&format!("Expected 0 arguments but got {}.", arg_count));
+                        return false;
+                    }
+
                     return true;
                 }
                 _ => {}
@@ -263,6 +284,27 @@ impl VM {
         }
     }
 
+    fn define_method(&mut self, name: &str) {
+        let method = self.stack.pop().unwrap();
+        let class = self.peek_mut(0).as_class_mut();
+        class.methods.insert(name.to_string(), method);
+    }
+
+    fn bind_method(&mut self, class: &ObjClass, name: &str) -> bool {
+        if let Some(method) = class.methods.get(name) {
+            let receiver = self.stack.pop().unwrap();
+            let bound_method = self.new_managed_obj(Obj::new_bound_method(ObjBoundMethod {
+                receiver,
+                method: method.as_gc_obj(),
+            }));
+            self.stack.push(Value::new_obj(bound_method));
+            true
+        } else {
+            self.runtime_error(&format!("Undefined property '{}'.", name));
+            false
+        }
+    }
+
     fn run(&mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) -> InterpretResult {
         loop {
             self.debug_trace_execution();
@@ -320,7 +362,7 @@ impl VM {
                     if let Value::Obj(obj) = constant {
                         if let ObjType::String(name) = &obj.obj_type {
                             let value = self.stack.pop().unwrap();
-                            self.globals.define(name, value);
+                            self.globals.insert(name.clone(), value);
                         } else {
                             self.runtime_error("Invalid variable name.");
                             return InterpretResult::RuntimeError;
@@ -395,15 +437,17 @@ impl VM {
                         _ => unreachable!(),
                     };
 
-                    let top = self.stack.pop().unwrap();
+                    let top = self.peek(0).clone();
                     let instance = top.as_instance();
 
                     if let Some(value) = instance.fields.get(name.as_string().as_str()) {
+                        self.stack.pop();
                         self.stack.push(value.clone());
-                    } else {
-                        self.runtime_error(&format!("Undefined property '{}'.", name.as_string()));
+                    } else if !self
+                        .bind_method(instance.class.as_class(), name.as_string().as_str())
+                    {
                         return InterpretResult::RuntimeError;
-                    };
+                    }
                 }
                 OP_SET_PROPERTY => {
                     if !self.peek(1).is_obj_instance() {
@@ -606,13 +650,19 @@ impl VM {
                 OP_CLASS => {
                     let byte = self.read_byte();
                     if let Value::Obj(obj) = &self.current_chunk.constants.values[byte as usize] {
-                        let class =
-                            self.new_managed_obj(Obj::new_class(ObjClass { name: obj.clone() }));
+                        let class = self.new_managed_obj(Obj::new_class(ObjClass {
+                            name: obj.clone(),
+                            methods: ValueTable::new(),
+                        }));
                         self.stack.push(Value::new_obj(class));
                     } else {
                         self.runtime_error("Expected class name.");
                         return InterpretResult::RuntimeError;
                     }
+                }
+                OP_METHOD => {
+                    let constant = self.read_constant();
+                    self.define_method(constant.as_string().as_str());
                 }
                 _ => {
                     println!("Unknown opcode {}", instruction);
@@ -688,6 +738,6 @@ impl VM {
             mark_object(upvalue.clone(), gc_gray_stack);
         }
 
-        mark_global_table(&mut self.globals, gc_gray_stack);
+        mark_value_table(&mut self.globals, gc_gray_stack);
     }
 }

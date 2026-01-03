@@ -33,6 +33,7 @@ pub const OP_CLOSURE: OpCode = 28;
 pub const OP_CLOSE_UPVALUE: OpCode = 29;
 pub const OP_RETURN: OpCode = 30;
 pub const OP_CLASS: OpCode = 31;
+pub const OP_METHOD: OpCode = 32;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {

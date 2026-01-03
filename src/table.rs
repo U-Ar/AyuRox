@@ -45,52 +45,30 @@ impl std::hash::Hasher for FNVHasher {
     }
 }
 
-pub struct StringTable {
-    pub table: HashMap<String, Gc<Obj>, BuildHasherFNV>,
+pub type StringTable = Table<Gc<Obj>>;
+pub type ValueTable = Table<Value>;
+
+#[derive(Debug, Clone)]
+pub struct Table<T> {
+    pub table: HashMap<String, T, BuildHasherFNV>,
 }
 
-impl StringTable {
+impl<T> Table<T> {
     pub fn new() -> Self {
-        StringTable {
+        Table {
             table: HashMap::with_hasher(BuildHasherFNV::new()),
         }
     }
 
-    pub fn get(&self, string: &str) -> Option<&Gc<Obj>> {
-        self.table.get(string)
-    }
-
-    pub fn insert(&mut self, string: String, obj: Gc<Obj>) -> Option<Gc<Obj>> {
-        self.table.insert(string, obj)
-    }
-}
-
-impl Default for StringTable {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub struct GlobalVariableTable {
-    pub table: HashMap<String, Value, BuildHasherFNV>,
-}
-
-impl GlobalVariableTable {
-    pub fn new() -> Self {
-        GlobalVariableTable {
-            table: HashMap::with_hasher(BuildHasherFNV::new()),
-        }
-    }
-
-    pub fn define(&mut self, name: &str, value: Value) {
-        self.table.insert(name.to_string(), value);
-    }
-
-    pub fn get(&self, name: &str) -> Option<&Value> {
+    pub fn get(&self, name: &str) -> Option<&T> {
         self.table.get(name)
     }
 
-    pub fn set(&mut self, name: &str, value: Value) -> bool {
+    pub fn insert(&mut self, name: String, value: T) -> Option<T> {
+        self.table.insert(name, value)
+    }
+
+    pub fn set(&mut self, name: &str, value: T) -> bool {
         if self.table.contains_key(name) {
             self.table.insert(name.to_string(), value);
             true
@@ -100,34 +78,7 @@ impl GlobalVariableTable {
     }
 }
 
-impl Default for GlobalVariableTable {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FieldTable {
-    pub table: HashMap<String, Value, BuildHasherFNV>,
-}
-
-impl FieldTable {
-    pub fn new() -> Self {
-        FieldTable {
-            table: HashMap::with_hasher(BuildHasherFNV::new()),
-        }
-    }
-
-    pub fn get(&self, name: &str) -> Option<&Value> {
-        self.table.get(name)
-    }
-
-    pub fn insert(&mut self, name: String, value: Value) -> Option<Value> {
-        self.table.insert(name, value)
-    }
-}
-
-impl Default for FieldTable {
+impl<T> Default for Table<T> {
     fn default() -> Self {
         Self::new()
     }

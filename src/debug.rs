@@ -3,10 +3,10 @@ use crate::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
         OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
-        OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
-    value::{ObjType, Value},
+    value::{ObjFunction, ObjType, Value},
     vm::VM,
 };
 
@@ -83,6 +83,7 @@ impl Chunk {
             OP_CLOSE_UPVALUE => Self::simple_instruction("OP_CLOSE_UPVALUE", offset),
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             OP_CLASS => self.constant_instruction("OP_CLASS", offset),
+            OP_METHOD => self.constant_instruction("OP_METHOD", offset),
             _ => {
                 println!("Unknown opcode {}", self.code[offset]);
                 offset + 1
@@ -128,17 +129,11 @@ pub fn print_value(value: &Value) {
         Value::Number(n) => print!("{n}"),
         Value::Obj(obj) => match &obj.obj_type {
             ObjType::String(s) => print!("{s}"),
-            ObjType::Function(f) => f.name.as_ref().map_or_else(
-                || print!("<script>"),
-                |name| print!("<fn {}>", name.as_string()),
-            ),
+            ObjType::Function(f) => print_function(f),
             ObjType::Native(_) => print!("<native fn>"),
             ObjType::Closure(c) => {
                 let function = c.function.as_function();
-                function.name.as_ref().map_or_else(
-                    || print!("<script>"),
-                    |name| print!("<fn {}>", name.as_string()),
-                )
+                print_function(function);
             }
             ObjType::Upvalue(_) => {
                 print!("upvalue")
@@ -149,7 +144,19 @@ pub fn print_value(value: &Value) {
             ObjType::Instance(instance) => {
                 print!("instance of {}", instance.class.as_class().name.as_string())
             }
+            ObjType::BoundMethod(bound_method) => {
+                let function = bound_method.method.as_closure().function.as_function();
+                print_function(function);
+            }
         },
+    }
+}
+
+pub fn print_function(function: &ObjFunction) {
+    if let Some(name) = &function.name {
+        print!("<fn {}>", name.as_string());
+    } else {
+        print!("<script>");
     }
 }
 

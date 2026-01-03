@@ -9,9 +9,13 @@ pub struct Scanner<'a> {
 #[derive(Clone)]
 pub struct Token {
     pub token_type: TokenType,
+
     pub start: usize,
     pub length: usize,
     pub line: usize,
+
+    pub literal: Option<String>,
+
     pub error_message: Option<String>,
 }
 
@@ -22,9 +26,16 @@ impl Default for Token {
             start: 0,
             length: 0,
             line: 0,
+            literal: None,
             error_message: None,
         }
     }
+}
+
+#[derive(Clone)]
+pub enum TokenOrigin {
+    Source(usize),
+    Synthetic(String),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -204,6 +215,7 @@ impl<'a> Scanner<'a> {
             start: self.start,
             length: self.current - self.start,
             line: self.line,
+            literal: None,
             error_message: None,
         }
     }
@@ -214,6 +226,7 @@ impl<'a> Scanner<'a> {
             start: self.start,
             length: self.current - self.start,
             line: self.line,
+            literal: None,
             error_message: Some(message.to_string()),
         }
     }

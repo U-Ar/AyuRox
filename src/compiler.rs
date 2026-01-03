@@ -5,8 +5,8 @@ use crate::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
         OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP,
-        OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL,
-        OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
+        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     memory::{
         ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_object, mark_value_array,
@@ -22,6 +22,7 @@ pub struct Compiler<'a> {
     parser: Parser<'a>,
 
     pub function_arena: Vec<FunctionScope>,
+    pub class_arena: Vec<ClassScope>,
 
     strings: StringTable,
 
@@ -36,6 +37,8 @@ pub struct FunctionScope {
     pub locals: Vec<Local>,
     pub upvalues: Vec<Upvalue>,
 }
+
+pub struct ClassScope {}
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
@@ -53,6 +56,7 @@ impl<'a> Compiler<'a> {
                     start: 0,
                     length: 0,
                     line: 0,
+                    literal: None,
                     error_message: None,
                 },
                 depth: 0,
@@ -64,6 +68,7 @@ impl<'a> Compiler<'a> {
         Compiler {
             parser: Parser::new(Scanner::new(source)),
             function_arena,
+            class_arena: Vec::new(),
             strings: StringTable::new(),
             scope_depth: 0,
             objects: None,
@@ -114,13 +119,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn begin_function_scope(&mut self, function_type: FunctionType) {
-        let name = if function_type == FunctionType::Function {
-            Some(self.intern_source(self.parser.previous.start, self.parser.previous.length))
-        } else {
-            None
-        };
+        let name =
+            Some(self.intern_source(self.parser.previous.start, self.parser.previous.length));
         self.function_arena.push(FunctionScope {
-            function_type,
             function: ObjFunction {
                 arity: 0,
                 chunk: Gc::new(Chunk::new()),
@@ -128,22 +129,43 @@ impl<'a> Compiler<'a> {
                 upvalue_count: 0,
             },
             locals: vec![Local {
-                name: Token {
-                    token_type: TokenType::Identifier,
-                    start: 0,
-                    length: 0,
-                    line: 0,
-                    error_message: None,
+                name: if function_type == FunctionType::Function {
+                    Token {
+                        token_type: TokenType::Identifier,
+                        start: 0,
+                        length: 0,
+                        line: 0,
+                        literal: None,
+                        error_message: None,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::Identifier,
+                        start: 0,
+                        length: 4,
+                        line: 0,
+                        literal: Some("this".to_string()),
+                        error_message: None,
+                    }
                 },
                 depth: 0,
                 is_captured: false,
             }],
+            function_type,
             upvalues: Vec::new(),
         });
     }
 
     fn end_function_scope(&mut self) -> FunctionScope {
         self.function_arena.pop().unwrap()
+    }
+
+    fn begin_class_scope(&mut self) {
+        self.class_arena.push(ClassScope {});
+    }
+
+    fn end_class_scope(&mut self) {
+        self.class_arena.pop();
     }
 
     pub fn compile(mut self, gc_gray_stack: &mut Vec<Gc<Obj>>) -> Option<RuntimeExpression> {
@@ -197,7 +219,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_return(&mut self) {
-        self.emit_byte(OP_NIL);
+        if self.function_arena.last().unwrap().function_type == FunctionType::Initializer {
+            self.emit_bytes(OP_GET_LOCAL, 0);
+        } else {
+            self.emit_byte(OP_NIL);
+        }
+
         self.emit_byte(OP_RETURN);
     }
 
@@ -263,16 +290,28 @@ impl<'a> Compiler<'a> {
     fn class_declaration(&mut self) {
         self.parser
             .consume(TokenType::Identifier, "Expect class name.");
+        let class_name_token = self.parser.previous.clone();
+
         let name_constant = self.identifier_constant(&self.parser.previous.clone());
         self.declare_variable();
 
         self.emit_bytes(OP_CLASS, name_constant);
         self.define_variable(name_constant);
 
+        self.begin_class_scope();
+
+        self.named_variable(class_name_token, false);
+
         self.parser
             .consume(TokenType::LeftBrace, "Expect '{' before class body.");
+        while !self.parser.check(TokenType::RightBrace) && !self.parser.check(TokenType::Eof) {
+            self.method();
+        }
         self.parser
             .consume(TokenType::RightBrace, "Expect '}' after class body.");
+        self.emit_byte(OP_POP);
+
+        self.end_class_scope();
     }
 
     fn fun_declaration(&mut self) {
@@ -425,6 +464,10 @@ impl<'a> Compiler<'a> {
         if self.parser.match_token(TokenType::Semicolon) {
             self.emit_return();
         } else {
+            if self.function_arena.last().unwrap().function_type == FunctionType::Initializer {
+                self.parser
+                    .error("Cannot return a value from an initializer.".to_string());
+            }
             self.expression();
             self.parser
                 .consume(TokenType::Semicolon, "Expect ';' after return value.");
@@ -487,6 +530,26 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn method(&mut self) {
+        self.parser
+            .consume(TokenType::Identifier, "Expect method name.");
+        let constant = self.identifier_constant(&self.parser.previous.clone());
+
+        let function_type = if self.parser.previous.length == 4
+            && "init"
+                == self
+                    .parser
+                    .scanner
+                    .get_source(self.parser.previous.start, self.parser.previous.length)
+        {
+            FunctionType::Initializer
+        } else {
+            FunctionType::Method
+        };
+        self.function(function_type);
+        self.emit_bytes(OP_METHOD, constant);
+    }
+
     fn expression_statement(&mut self) {
         self.expression();
         self.parser
@@ -543,8 +606,17 @@ impl<'a> Compiler<'a> {
         if a.length != b.length {
             return false;
         }
-        self.parser.scanner.get_source(a.start, a.length)
-            == self.parser.scanner.get_source(b.start, b.length)
+        let a_str = if let Some(a_literal) = &a.literal {
+            a_literal.as_str()
+        } else {
+            self.parser.scanner.get_source(a.start, a.length)
+        };
+        let b_str = if let Some(b_literal) = &b.literal {
+            b_literal.as_str()
+        } else {
+            self.parser.scanner.get_source(b.start, b.length)
+        };
+        a_str == b_str
     }
 
     fn resolve_current_local(&mut self, name: &Token) -> Option<usize> {
@@ -709,7 +781,7 @@ impl<'a> Compiler<'a> {
     pub fn debug_print_code(&mut self) {
         if !self.parser.had_error {
             let name = match self.function_arena.last().unwrap().function_type {
-                FunctionType::Function => self
+                FunctionType::Function | FunctionType::Method | FunctionType::Initializer => self
                     .function_arena
                     .last()
                     .unwrap()
@@ -1120,7 +1192,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::None,
     };
     rules[TokenType::This as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(this),
         infix: None,
         precedence: Precedence::None,
     };
@@ -1228,6 +1300,16 @@ fn string(compiler: &mut Compiler, _can_assign: bool) {
 
 fn variable(compiler: &mut Compiler, can_assign: bool) {
     compiler.named_variable(compiler.parser.previous.clone(), can_assign)
+}
+
+fn this(compiler: &mut Compiler, _can_assign: bool) {
+    if compiler.class_arena.is_empty() {
+        compiler
+            .parser
+            .error("Cannot use 'this' outside of a class.".to_string());
+        return;
+    }
+    variable(compiler, false);
 }
 
 fn and(compiler: &mut Compiler, _can_assign: bool) {

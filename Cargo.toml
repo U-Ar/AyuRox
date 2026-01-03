@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 
 [features]
-default = ["debug_trace_execution", "debug_print_code", "debug_stress_gc", "debug_log_gc"]
+default = ["debug_trace_execution", "debug_print_code", "debug_log_gc"]
 debug_trace_execution = []
 debug_print_code = []
 debug_stress_gc = []
