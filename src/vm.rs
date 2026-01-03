@@ -4,9 +4,10 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_INVOKE, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
-        OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_GET_PROPERTY, OP_GET_SUPER, OP_GET_UPVALUE, OP_GREATER, OP_INHERIT, OP_INVOKE, OP_JUMP,
+        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
+        OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE,
+        OP_SUBTRACT, OP_SUPER_INVOKE, OP_TRUE,
     },
     compiler::Compiler,
     debug::print_value,
@@ -501,6 +502,19 @@ impl VM {
                         .insert(name.as_string().clone(), value.clone());
                     self.stack.push(value);
                 }
+                OP_GET_SUPER => {
+                    let byte = self.read_byte();
+                    let name = match &self.current_chunk.constants.values[byte as usize] {
+                        Value::Obj(obj) => obj.clone(),
+                        _ => unreachable!(),
+                    };
+
+                    let superclass = self.stack.pop().unwrap();
+
+                    if !self.bind_method(superclass.as_class(), name.as_string().as_str()) {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
                 OP_EQUAL => {
                     let b = self.stack.pop().unwrap();
                     let a = self.stack.pop().unwrap();
@@ -635,6 +649,20 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
                 }
+                OP_SUPER_INVOKE => {
+                    let byte = self.read_byte();
+                    let method_name = match &self.current_chunk.constants.values[byte as usize] {
+                        Value::Obj(obj) => obj.clone(),
+                        _ => unreachable!(),
+                    };
+                    let arg_count = self.read_byte() as usize;
+
+                    let superclass = self.stack.pop().unwrap();
+
+                    if !self.invoke_from_class(superclass.as_class(), method_name, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+                }
                 OP_CLOSURE => {
                     let constant = self.read_constant();
 
@@ -702,6 +730,20 @@ impl VM {
                         self.runtime_error("Expected class name.");
                         return InterpretResult::RuntimeError;
                     }
+                }
+                OP_INHERIT => {
+                    let superclass = self.peek(1).as_class();
+                    if !self.peek(0).is_obj_class() {
+                        self.runtime_error("Superclass must be a class.");
+                        return InterpretResult::RuntimeError;
+                    }
+
+                    let mut subclass_ptr = self.peek(0).as_gc_obj();
+                    let subclass = subclass_ptr.as_class_mut();
+
+                    subclass.methods.merge_from(&superclass.methods);
+
+                    self.stack.pop();
                 }
                 OP_METHOD => {
                     let constant = self.read_constant();

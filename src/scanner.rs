@@ -19,6 +19,19 @@ pub struct Token {
     pub error_message: Option<String>,
 }
 
+impl Token {
+    pub fn synthetic_token(literal: String) -> Self {
+        Token {
+            token_type: TokenType::Identifier,
+            start: 0,
+            length: literal.len(),
+            line: 0,
+            literal: Some(literal),
+            error_message: None,
+        }
+    }
+}
+
 impl Default for Token {
     fn default() -> Self {
         Token {

@@ -76,6 +76,17 @@ impl<T> Table<T> {
             false
         }
     }
+
+    pub fn merge_from(&mut self, other: &Table<T>)
+    where
+        T: Clone,
+    {
+        for (key, value) in &other.table {
+            if !self.table.contains_key(key) {
+                self.table.insert(key.clone(), value.clone());
+            }
+        }
+    }
 }
 
 impl<T> Default for Table<T> {

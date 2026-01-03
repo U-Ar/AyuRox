@@ -4,9 +4,10 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_INVOKE, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
-        OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_GET_PROPERTY, OP_GET_SUPER, OP_GET_UPVALUE, OP_GREATER, OP_INHERIT, OP_INVOKE, OP_JUMP,
+        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
+        OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE,
+        OP_SUBTRACT, OP_SUPER_INVOKE, OP_TRUE,
     },
     memory::{
         ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_object, mark_value_array,
@@ -38,7 +39,9 @@ pub struct FunctionScope {
     pub upvalues: Vec<Upvalue>,
 }
 
-pub struct ClassScope {}
+pub struct ClassScope {
+    pub has_superclass: bool,
+}
 
 impl<'a> Compiler<'a> {
     pub fn new(source: &'a str) -> Self {
@@ -161,7 +164,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn begin_class_scope(&mut self) {
-        self.class_arena.push(ClassScope {});
+        self.class_arena.push(ClassScope {
+            has_superclass: false,
+        });
     }
 
     fn end_class_scope(&mut self) {
@@ -291,14 +296,38 @@ impl<'a> Compiler<'a> {
         self.parser
             .consume(TokenType::Identifier, "Expect class name.");
         let class_name_token = self.parser.previous.clone();
-
         let name_constant = self.identifier_constant(&self.parser.previous.clone());
         self.declare_variable();
-
         self.emit_bytes(OP_CLASS, name_constant);
         self.define_variable(name_constant);
 
         self.begin_class_scope();
+
+        if self.parser.match_token(TokenType::Less) {
+            self.parser
+                .consume(TokenType::Identifier, "Expect superclass name after '<'.");
+            variable(self, false);
+
+            if self.identifiers_equal(&class_name_token, &self.parser.previous) {
+                self.parser
+                    .error("A class cannot inherit from itself.".to_string());
+            }
+
+            self.begin_scope();
+            self.add_local(Token {
+                token_type: TokenType::Identifier,
+                start: 0,
+                length: 5,
+                line: 0,
+                literal: Some("super".to_string()),
+                error_message: None,
+            });
+            self.define_variable(0);
+
+            self.named_variable(class_name_token.clone(), false);
+            self.emit_byte(OP_INHERIT);
+            self.class_arena.last_mut().unwrap().has_superclass = true;
+        }
 
         self.named_variable(class_name_token, false);
 
@@ -310,6 +339,10 @@ impl<'a> Compiler<'a> {
         self.parser
             .consume(TokenType::RightBrace, "Expect '}' after class body.");
         self.emit_byte(OP_POP);
+
+        if self.class_arena.last().unwrap().has_superclass {
+            self.end_scope();
+        }
 
         self.end_class_scope();
     }
@@ -1187,7 +1220,7 @@ const fn init_parse_rules() -> [ParseRule; 256] {
         precedence: Precedence::None,
     };
     rules[TokenType::Super as usize] = ParseRule {
-        prefix: None,
+        prefix: Some(super_),
         infix: None,
         precedence: Precedence::None,
     };
@@ -1310,6 +1343,36 @@ fn this(compiler: &mut Compiler, _can_assign: bool) {
         return;
     }
     variable(compiler, false);
+}
+
+fn super_(compiler: &mut Compiler, _can_assign: bool) {
+    if compiler.class_arena.is_empty() {
+        compiler
+            .parser
+            .error("Cannot use 'super' outside of a class.".to_string());
+    } else if !compiler.class_arena.last().unwrap().has_superclass {
+        compiler
+            .parser
+            .error("Cannot use 'super' in a class with no superclass.".to_string());
+    }
+    compiler
+        .parser
+        .consume(TokenType::Dot, "Expect '.' after 'super'.");
+    compiler
+        .parser
+        .consume(TokenType::Identifier, "Expect superclass method name.");
+    let name = compiler.identifier_constant(&compiler.parser.previous.clone());
+
+    compiler.named_variable(Token::synthetic_token("this".to_string()), false);
+    if compiler.parser.match_token(TokenType::LeftParen) {
+        let arg_count = compiler.argument_list();
+        compiler.named_variable(Token::synthetic_token("super".to_string()), false);
+        compiler.emit_bytes(OP_SUPER_INVOKE, name);
+        compiler.emit_byte(arg_count);
+    } else {
+        compiler.named_variable(Token::synthetic_token("super".to_string()), false);
+        compiler.emit_bytes(OP_GET_SUPER, name);
+    }
 }
 
 fn and(compiler: &mut Compiler, _can_assign: bool) {

@@ -2,9 +2,10 @@ use crate::{
     chunk::{
         Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
         OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
-        OP_GET_PROPERTY, OP_GET_UPVALUE, OP_GREATER, OP_INVOKE, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS,
-        OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN,
-        OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
+        OP_GET_PROPERTY, OP_GET_SUPER, OP_GET_UPVALUE, OP_GREATER, OP_INHERIT, OP_INVOKE, OP_JUMP,
+        OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_METHOD, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
+        OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_PROPERTY, OP_SET_UPVALUE,
+        OP_SUBTRACT, OP_SUPER_INVOKE, OP_TRUE,
     },
     value::{ObjFunction, ObjType, Value},
     vm::VM,
@@ -43,6 +44,7 @@ impl Chunk {
             OP_SET_UPVALUE => self.byte_instruction("OP_SET_UPVALUE", offset),
             OP_GET_PROPERTY => self.constant_instruction("OP_GET_PROPERTY", offset),
             OP_SET_PROPERTY => self.constant_instruction("OP_SET_PROPERTY", offset),
+            OP_GET_SUPER => self.constant_instruction("OP_GET_SUPER", offset),
             OP_EQUAL => Self::simple_instruction("OP_EQUAL", offset),
             OP_GREATER => Self::simple_instruction("OP_GREATER", offset),
             OP_LESS => Self::simple_instruction("OP_LESS", offset),
@@ -58,6 +60,7 @@ impl Chunk {
             OP_LOOP => self.jump_instruction("OP_LOOP", -1, offset),
             OP_CALL => self.byte_instruction("OP_CALL", offset),
             OP_INVOKE => self.invoke_instruction("OP_INVOKE", offset),
+            OP_SUPER_INVOKE => self.invoke_instruction("OP_SUPER_INVOKE", offset),
             OP_CLOSURE => {
                 let mut offset = offset + 1;
                 let constant_index = self.code[offset] as usize;
@@ -84,6 +87,7 @@ impl Chunk {
             OP_CLOSE_UPVALUE => Self::simple_instruction("OP_CLOSE_UPVALUE", offset),
             OP_RETURN => Self::simple_instruction("OP_RETURN", offset),
             OP_CLASS => self.constant_instruction("OP_CLASS", offset),
+            OP_INHERIT => Self::simple_instruction("OP_INHERIT", offset),
             OP_METHOD => self.constant_instruction("OP_METHOD", offset),
             _ => {
                 println!("Unknown opcode {}", self.code[offset]);

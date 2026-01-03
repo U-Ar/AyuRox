@@ -125,6 +125,12 @@ impl Value {
             _ => false,
         }
     }
+    pub fn is_obj_class(&self) -> bool {
+        match self {
+            Value::Obj(obj) => matches!(obj.obj_type, ObjType::Class(_)),
+            _ => false,
+        }
+    }
     pub fn is_obj_instance(&self) -> bool {
         match self {
             Value::Obj(obj) => matches!(obj.obj_type, ObjType::Instance(_)),
@@ -218,6 +224,17 @@ impl Value {
                 u
             } else {
                 panic!("Object is not an upvalue");
+            }
+        } else {
+            panic!("Value is not an object");
+        }
+    }
+    pub fn as_class(&self) -> &ObjClass {
+        if let Value::Obj(obj) = self {
+            if let ObjType::Class(c) = &obj.obj_type {
+                c
+            } else {
+                panic!("Object is not a class");
             }
         } else {
             panic!("Value is not an object");
@@ -361,6 +378,13 @@ impl Obj {
     }
     pub fn as_class(&self) -> &ObjClass {
         if let ObjType::Class(c) = &self.obj_type {
+            c
+        } else {
+            panic!("Object is not a class");
+        }
+    }
+    pub fn as_class_mut(&mut self) -> &mut ObjClass {
+        if let ObjType::Class(c) = &mut self.obj_type {
             c
         } else {
             panic!("Object is not a class");
