@@ -2,11 +2,11 @@ use std::sync::atomic::Ordering;
 
 use crate::{
     chunk::{
-        Chunk, OP_ADD, OP_CALL, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT, OP_DEFINE_GLOBAL,
-        OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL, OP_GET_UPVALUE, OP_GREATER,
-        OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY, OP_NEGATE, OP_NIL, OP_NOT,
-        OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL, OP_SET_UPVALUE, OP_SUBTRACT,
-        OP_TRUE,
+        Chunk, OP_ADD, OP_CALL, OP_CLASS, OP_CLOSE_UPVALUE, OP_CLOSURE, OP_CONSTANT,
+        OP_DEFINE_GLOBAL, OP_DIVIDE, OP_EQUAL, OP_FALSE, OP_GET_GLOBAL, OP_GET_LOCAL,
+        OP_GET_UPVALUE, OP_GREATER, OP_JUMP, OP_JUMP_IF_FALSE, OP_LESS, OP_LOOP, OP_MULTIPLY,
+        OP_NEGATE, OP_NIL, OP_NOT, OP_POP, OP_PRINT, OP_RETURN, OP_SET_GLOBAL, OP_SET_LOCAL,
+        OP_SET_UPVALUE, OP_SUBTRACT, OP_TRUE,
     },
     memory::{
         ALLOCATED, GC_HEAP_GROW_FACTOR, GC_REQUESTED, Gc, NEXT_GC, mark_object, mark_value_array,
@@ -245,7 +245,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn declaration(&mut self) {
-        if self.parser.match_token(TokenType::Fun) {
+        if self.parser.match_token(TokenType::Class) {
+            self.class_declaration();
+        } else if self.parser.match_token(TokenType::Fun) {
             self.fun_declaration();
         } else if self.parser.match_token(TokenType::Var) {
             self.var_declaration();
@@ -256,6 +258,21 @@ impl<'a> Compiler<'a> {
         if self.parser.panic_mode {
             self.parser.synchronize();
         }
+    }
+
+    fn class_declaration(&mut self) {
+        self.parser
+            .consume(TokenType::Identifier, "Expect class name.");
+        let name_constant = self.identifier_constant(&self.parser.previous.clone());
+        self.declare_variable();
+
+        self.emit_bytes(OP_CLASS, name_constant);
+        self.define_variable(name_constant);
+
+        self.parser
+            .consume(TokenType::LeftBrace, "Expect '{' before class body.");
+        self.parser
+            .consume(TokenType::RightBrace, "Expect '}' after class body.");
     }
 
     fn fun_declaration(&mut self) {

@@ -22,6 +22,7 @@ pub enum ObjType {
     Native(NativeFunction),
     Closure(ObjClosure),
     Upvalue(ObjUpvalue),
+    Class(ObjClass),
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,11 @@ pub struct ObjUpvalue {
     pub location: Option<usize>,
     pub closed: Option<Value>,
     pub next: Option<Gc<Obj>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjClass {
+    pub name: Gc<Obj>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -230,6 +236,13 @@ impl Obj {
     pub fn new_upvalue(upvalue: ObjUpvalue) -> Self {
         Obj {
             obj_type: ObjType::Upvalue(upvalue),
+            is_marked: false,
+            next: None,
+        }
+    }
+    pub fn new_class(class: ObjClass) -> Self {
+        Obj {
+            obj_type: ObjType::Class(class),
             is_marked: false,
             next: None,
         }

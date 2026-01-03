@@ -147,7 +147,7 @@ pub fn blacken_object(mut obj: Gc<Obj>, gc_gray_stack: &mut Vec<Gc<Obj>>) {
                 mark_value(closed, gc_gray_stack);
             }
         }
-        ObjType::String(_) | ObjType::Native(_) => {}
+        ObjType::String(_) | ObjType::Native(_) | ObjType::Class(_) => {}
     }
 }
 
