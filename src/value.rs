@@ -1,4 +1,4 @@
-use crate::{chunk::Chunk, memory::Gc};
+use crate::{chunk::Chunk, memory::Gc, table::FieldTable};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -23,6 +23,7 @@ pub enum ObjType {
     Closure(ObjClosure),
     Upvalue(ObjUpvalue),
     Class(ObjClass),
+    Instance(ObjInstance),
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,12 @@ pub struct ObjUpvalue {
 #[derive(Debug, Clone)]
 pub struct ObjClass {
     pub name: Gc<Obj>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjInstance {
+    pub class: Gc<Obj>,
+    pub fields: FieldTable,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -105,6 +112,12 @@ impl Value {
     pub fn is_obj_native(&self) -> bool {
         match self {
             Value::Obj(obj) => matches!(obj.obj_type, ObjType::Native(_)),
+            _ => false,
+        }
+    }
+    pub fn is_obj_instance(&self) -> bool {
+        match self {
+            Value::Obj(obj) => matches!(obj.obj_type, ObjType::Instance(_)),
             _ => false,
         }
     }
@@ -193,6 +206,28 @@ impl Value {
             panic!("Value is not an object");
         }
     }
+    pub fn as_instance(&self) -> &ObjInstance {
+        if let Value::Obj(obj) = self {
+            if let ObjType::Instance(i) = &obj.obj_type {
+                i
+            } else {
+                panic!("Object is not an instance");
+            }
+        } else {
+            panic!("Value is not an object");
+        }
+    }
+    pub fn as_instance_mut(&mut self) -> &mut ObjInstance {
+        if let Value::Obj(obj) = self {
+            if let ObjType::Instance(i) = &mut obj.obj_type {
+                i
+            } else {
+                panic!("Object is not an instance");
+            }
+        } else {
+            panic!("Value is not an object");
+        }
+    }
     pub fn is_equal(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -247,6 +282,13 @@ impl Obj {
             next: None,
         }
     }
+    pub fn new_instance(instance: ObjInstance) -> Self {
+        Obj {
+            obj_type: ObjType::Instance(instance),
+            is_marked: false,
+            next: None,
+        }
+    }
     pub fn as_string(&self) -> &String {
         if let ObjType::String(s) = &self.obj_type {
             s
@@ -280,6 +322,20 @@ impl Obj {
             u
         } else {
             panic!("Object is not an upvalue");
+        }
+    }
+    pub fn as_class(&self) -> &ObjClass {
+        if let ObjType::Class(c) = &self.obj_type {
+            c
+        } else {
+            panic!("Object is not a class");
+        }
+    }
+    pub fn as_instance_mut(&mut self) -> &mut ObjInstance {
+        if let ObjType::Instance(i) = &mut self.obj_type {
+            i
+        } else {
+            panic!("Object is not an instance");
         }
     }
 }
