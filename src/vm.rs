@@ -593,10 +593,6 @@ impl VM {
                         return InterpretResult::RuntimeError;
                     }
                     let b = self.stack.pop().unwrap();
-                    if b.as_number() == 0.0 {
-                        self.runtime_error("Division by zero.");
-                        return InterpretResult::RuntimeError;
-                    }
                     let a = self.stack.pop().unwrap();
                     self.stack
                         .push(Value::new_number(a.as_number() / b.as_number()));
@@ -732,12 +728,12 @@ impl VM {
                     }
                 }
                 OP_INHERIT => {
-                    let superclass = self.peek(1).as_class();
-                    if !self.peek(0).is_obj_class() {
+                    if !self.peek(1).is_obj_class() {
                         self.runtime_error("Superclass must be a class.");
                         return InterpretResult::RuntimeError;
                     }
-
+                    let superclass = self.peek(1).as_class();
+                    
                     let mut subclass_ptr = self.peek(0).as_gc_obj();
                     let subclass = subclass_ptr.as_class_mut();
 
