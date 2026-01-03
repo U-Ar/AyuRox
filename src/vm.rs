@@ -89,8 +89,6 @@ fn clock_native(_arg_count: usize, _args: &Vec<Value>) -> Value {
 
 impl VM {
     pub fn new(runtime_expression: RuntimeExpression) -> Self {
-        let stack = Vec::new();
-
         let chunk_ptr = runtime_expression.function.chunk.clone();
 
         let objects = runtime_expression.objects;
@@ -109,6 +107,8 @@ impl VM {
             ip: 0,
             slot_start: 0,
         }];
+
+        let stack = vec![Value::new_obj(closure_ptr.clone())];
 
         VM {
             current_chunk: chunk_ptr,
