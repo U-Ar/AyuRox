@@ -1,4 +1,4 @@
-use crate::{chunk::Chunk, memory::Gc, table::FieldTable};
+use crate::{chunk::Chunk, memory::Gc, table::ValueTable};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -24,6 +24,7 @@ pub enum ObjType {
     Upvalue(ObjUpvalue),
     Class(ObjClass),
     Instance(ObjInstance),
+    BoundMethod(ObjBoundMethod),
 }
 
 #[derive(Debug, Clone)]
@@ -50,17 +51,26 @@ pub struct ObjUpvalue {
 #[derive(Debug, Clone)]
 pub struct ObjClass {
     pub name: Gc<Obj>,
+    pub methods: ValueTable,
 }
 
 #[derive(Debug, Clone)]
 pub struct ObjInstance {
     pub class: Gc<Obj>,
-    pub fields: FieldTable,
+    pub fields: ValueTable,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjBoundMethod {
+    pub receiver: Value,
+    pub method: Gc<Obj>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum FunctionType {
     Function,
+    Initializer,
+    Method,
     Script,
 }
 
@@ -155,6 +165,13 @@ impl Value {
             panic!("Value is not a number");
         }
     }
+    pub fn as_gc_obj(&self) -> Gc<Obj> {
+        if let Value::Obj(obj) = self {
+            obj.clone()
+        } else {
+            panic!("Value is not an object");
+        }
+    }
     pub fn as_obj(&self) -> &Obj {
         if let Value::Obj(obj) = self {
             obj
@@ -201,6 +218,17 @@ impl Value {
                 u
             } else {
                 panic!("Object is not an upvalue");
+            }
+        } else {
+            panic!("Value is not an object");
+        }
+    }
+    pub fn as_class_mut(&mut self) -> &mut ObjClass {
+        if let Value::Obj(obj) = self {
+            if let ObjType::Class(c) = &mut obj.obj_type {
+                c
+            } else {
+                panic!("Object is not a class");
             }
         } else {
             panic!("Value is not an object");
@@ -285,6 +313,13 @@ impl Obj {
     pub fn new_instance(instance: ObjInstance) -> Self {
         Obj {
             obj_type: ObjType::Instance(instance),
+            is_marked: false,
+            next: None,
+        }
+    }
+    pub fn new_bound_method(bound_method: ObjBoundMethod) -> Self {
+        Obj {
+            obj_type: ObjType::BoundMethod(bound_method),
             is_marked: false,
             next: None,
         }
