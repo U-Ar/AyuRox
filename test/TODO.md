@@ -8,6 +8,7 @@
 - comments/*
 - closure/* except for assign_to_closure.lox
 - constructor/*
+- field/*
 - empty_file.lox
 - precedence.lox
 - unexpected_character.lox
