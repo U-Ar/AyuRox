@@ -8,19 +8,22 @@
 
 craftinginterpreters.com/repo に公開されているテストスイートのうち、`test/benchmark` にある各種ベンチマークの実行時間をリリースビルドで測定
 
-### v0.1.0
+| execution time (s) | v0.1.0 | v0.1.1 |
+| - | - | - |
+| binary_trees.lox | 3.20 | 3.04 |
+| equality.lox | 2.67 (loop) | 2.49 (loop) |
+| fib.lox | 1.98 | 1.94 |
+| instantiation.lox | 0.92 | 0.92 |
+| invocation.lox | 0.77 | 0.73 |
+| method_call.lox | 0.54 | 0.50 |
+| properties.lox | 1.42 | 1.42 |
+| string_equality.lox | 1.24 (loop) | 1.07 |
+| trees.lox | 4.81 | 4.50 |
+| zoo.lox | 0.93 | 0.87 |
 
-- binary_trees.lox: 3.20 s
-- equality.lox: 2.67 s (loop)
-- fib.lox: 1.98 s
-- instantiation.lox: 0.92 s
-- invocation.lox: 0.77 s
-- method_call.lox: 0.54 s
-- properties.lox: 1.42 s
-- string_equality.lox: 1.24 s (loop)
-- trees.lox: 4.81 s
-- zoo_batch.lox: sum=102540000, batch=1709
-- zoo.lox: 0.93 s
+- zoo_batch.lox
+  - v0.1.0: sum=102540000, batch=1709
+  - v0.1.1: sum=109980000, batch=1833
 
 ## CHANGELOG
 
