@@ -8,7 +8,7 @@
 
 craftinginterpreters.com/repo に公開されているテストスイートのうち、`test/benchmark` にある各種ベンチマークの実行時間をリリースビルドで測定
 
-| execution time (s) | reference(clox) | v0.1.0 | v0.1.1 |
+| execution time (s) | reference(clox with nan boxing) | v0.1.0 | v0.1.1 |
 | - | - | - | - |
 | binary_trees.lox | 0.86 | 3.20 | 3.04 |
 | equality.lox(loop) | 0.70 | 2.67 | 2.49 |
