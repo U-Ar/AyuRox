@@ -6,6 +6,9 @@ set -euo pipefail
 EXT="lox"
 ROOT_DIR="${1:-test}"
 
+# COMMAND="cargo run"
+COMMAND="target/release/ayurox"
+
 if [[ ! -d "${ROOT_DIR}" ]]; then
   echo "Directory not found: ${ROOT_DIR}" >&2
   exit 2
@@ -22,11 +25,11 @@ find "${ROOT_DIR}" -type f -name "*.${EXT}" -print0 \
 
     echo "============================================================"
     echo "FILE: ${f}"
-    echo "CMD : cargo run -- \"${f}\""
+    echo "CMD : ${COMMAND} -- \"${f}\""
     echo "------------------------------------------------------------"
 
     set +e
-    cargo run -- "${f}"
+    ${COMMAND} "${f}"
     status=$?
     set -e
 

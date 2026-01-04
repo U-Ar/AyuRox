@@ -8,6 +8,8 @@
 
 craftinginterpreters.com/repo に公開されているテストスイートのうち、`test/benchmark` にある各種ベンチマークの実行時間をリリースビルドで測定
 
+### v0.1.0
+
 - binary_trees.lox: 3.20 s
 - equality.lox: 2.67 s (loop)
 - fib.lox: 1.98 s
