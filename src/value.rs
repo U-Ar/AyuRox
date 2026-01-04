@@ -362,6 +362,13 @@ impl Obj {
             panic!("Object is not a closure");
         }
     }
+    pub fn as_closure_mut(&mut self) -> &mut ObjClosure {
+        if let ObjType::Closure(c) = &mut self.obj_type {
+            c
+        } else {
+            panic!("Object is not a closure");
+        }
+    }
     pub fn as_upvalue(&self) -> &ObjUpvalue {
         if let ObjType::Upvalue(u) = &self.obj_type {
             u

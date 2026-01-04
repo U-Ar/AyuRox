@@ -1,4 +1,4 @@
-use std::{ops::DerefMut, sync::atomic::Ordering, vec};
+use std::{sync::atomic::Ordering, vec};
 
 use crate::{
     chunk::{
@@ -24,14 +24,18 @@ use crate::{
 
 pub struct VM {
     pub current_chunk: Gc<Chunk>,
-    pub frames: Vec<CallFrame>,
+    pub current_frame: CallFrame,
+    pub frame_stack: Vec<CallFrame>,
+
     pub stack: Vec<Value>,
     pub strings: StringTable,
     pub globals: ValueTable,
+
     pub open_upvalues: Option<Gc<Obj>>,
     pub objects: Option<Gc<Obj>>,
 }
 
+#[derive(Clone)]
 pub struct CallFrame {
     pub closure: Gc<Obj>,
     pub ip: usize,
@@ -106,17 +110,19 @@ impl VM {
         }));
         closure_ptr.next = Some(function_ptr);
 
-        let frames = vec![CallFrame {
+        // DONE: use current frame
+        let frame = CallFrame {
             closure: closure_ptr.clone(),
             ip: 0,
             slot_start: 0,
-        }];
+        };
 
         let stack = vec![Value::new_obj(closure_ptr.clone())];
 
         VM {
             current_chunk: chunk_ptr,
-            frames,
+            current_frame: frame,
+            frame_stack: Vec::new(),
             stack,
             strings: runtime_expression.strings,
             globals: ValueTable::new(),
@@ -138,12 +144,13 @@ impl VM {
 
     pub fn runtime_error(&mut self, message: &str) {
         println!("{}", message);
-        let frame = self.frames.last().unwrap();
-        let inst_idx = frame.ip - 1;
+
+        // DONE: use current frame
+        let inst_idx = self.current_frame.ip - 1;
         let line = self.current_chunk.lines[inst_idx];
         println!("[line {}] in script", line);
 
-        for frame in self.frames.iter().rev() {
+        for frame in self.frame_stack.iter().rev() {
             let closure = &frame.closure;
             let function_name =
                 if let Some(name) = &closure.as_closure().function.as_function().name {
@@ -228,18 +235,22 @@ impl VM {
             return false;
         }
 
+        // DONE: use current frame
+
+        self.frame_stack.push(self.current_frame.clone());
+
         self.current_chunk = function.chunk.clone();
-        let frame = CallFrame {
+        self.current_frame = CallFrame {
             closure: self.new_managed_obj(Obj::new_closure(closure.clone())),
             ip: 0,
             slot_start: self.stack.len() - arg_count - 1,
         };
-        self.frames.push(frame);
         true
     }
 
     fn capture_upvalue(&mut self, local_index: u8) -> Gc<Obj> {
-        let stack_index = self.frames.last().unwrap().slot_start + (local_index as usize);
+        // DONE: use current frame
+        let stack_index = self.current_frame.slot_start + (local_index as usize);
 
         let mut prev_upvalue = None;
         let mut upvalue = self.open_upvalues.clone();
@@ -362,13 +373,15 @@ impl VM {
                 }
                 OP_GET_LOCAL => {
                     let slot = self.read_byte() as usize;
-                    let value = self.stack[self.frames.last().unwrap().slot_start + slot].clone();
+                    // DONE: use current frame
+                    let value = self.stack[self.current_frame.slot_start + slot].clone();
                     self.stack.push(value);
                 }
                 OP_SET_LOCAL => {
                     let slot = self.read_byte() as usize;
                     let value = self.peek(0).clone();
-                    self.stack[self.frames.last().unwrap().slot_start + slot] = value;
+                    // DONE: use current frame
+                    self.stack[self.current_frame.slot_start + slot] = value;
                 }
                 OP_GET_GLOBAL => {
                     let constant = self.read_constant();
@@ -424,14 +437,15 @@ impl VM {
                 }
                 OP_GET_UPVALUE => {
                     let slot = self.read_byte() as usize;
+                    // DONE: use current frame
                     let value = if let Some(location) =
-                        self.frames.last().unwrap().closure.as_closure().upvalues[slot]
+                        self.current_frame.closure.as_closure().upvalues[slot]
                             .as_upvalue()
                             .location
                     {
                         self.stack[location].clone()
                     } else {
-                        self.frames.last().unwrap().closure.as_closure().upvalues[slot]
+                        self.current_frame.closure.as_closure().upvalues[slot]
                             .as_upvalue()
                             .closed
                             .as_ref()
@@ -442,24 +456,13 @@ impl VM {
                 }
                 OP_SET_UPVALUE => {
                     let slot = self.read_byte() as usize;
-                    if let Obj {
-                        obj_type: ObjType::Closure(closure),
-                        ..
-                    } = self.frames.last_mut().unwrap().closure.deref_mut()
-                    {
-                        let upvalue = &mut closure.upvalues[slot];
-                        if let Obj {
-                            obj_type: ObjType::Upvalue(upvalue),
-                            ..
-                        } = upvalue.deref_mut()
-                        {
-                            if upvalue.location.is_some() {
-                                upvalue.location = Some(self.stack.len() - 1);
-                            } else {
-                                let value = self.stack.last().unwrap().clone();
-                                upvalue.closed = Some(value);
-                            }
-                        }
+                    // DONE: use current frame
+                    let closure = self.current_frame.closure.as_closure_mut();
+                    let upvalue = closure.upvalues[slot].as_upvalue_mut();
+                    if upvalue.location.is_some() {
+                        upvalue.location = Some(self.stack.len() - 1);
+                    } else {
+                        upvalue.closed = Some(self.stack.last().unwrap().clone());
                     }
                 }
                 OP_GET_PROPERTY => {
@@ -620,17 +623,20 @@ impl VM {
                 }
                 OP_JUMP => {
                     let offset = self.read_short() as usize;
-                    self.frames.last_mut().unwrap().ip += offset;
+                    // DONE: use current frame
+                    self.current_frame.ip += offset;
                 }
                 OP_JUMP_IF_FALSE => {
                     let offset = self.read_short() as usize;
                     if is_falsey(self.peek(0)) {
-                        self.frames.last_mut().unwrap().ip += offset;
+                        // DONE: use current frame
+                        self.current_frame.ip += offset;
                     }
                 }
                 OP_LOOP => {
                     let offset = self.read_short() as usize;
-                    self.frames.last_mut().unwrap().ip -= offset;
+                    // DONE: use current frame
+                    self.current_frame.ip -= offset;
                 }
                 OP_CALL => {
                     let arg_count = self.read_byte() as usize;
@@ -677,8 +683,9 @@ impl VM {
                             if is_local == 1 {
                                 upvalues.push(self.capture_upvalue(index));
                             } else {
+                                // DONE: use current frame
                                 upvalues.push(
-                                    self.frames.last().unwrap().closure.as_closure().upvalues
+                                    self.current_frame.closure.as_closure().upvalues
                                         [index as usize]
                                         .clone(),
                                 );
@@ -701,17 +708,19 @@ impl VM {
                 }
                 OP_RETURN => {
                     let result = self.stack.pop().unwrap();
-                    self.close_upvalues(self.frames.last().unwrap().slot_start);
-                    let frame = self.frames.pop().unwrap();
-                    if self.frames.is_empty() {
+                    // DONE: use current frame
+                    self.close_upvalues(self.current_frame.slot_start);
+
+                    if self.frame_stack.is_empty() {
                         self.stack.pop();
                         return InterpretResult::Ok;
                     }
-                    self.stack.truncate(frame.slot_start);
+                    self.stack.truncate(self.current_frame.slot_start);
                     self.stack.push(result);
 
-                    let frame = self.frames.last().unwrap();
-                    self.current_chunk = frame
+                    self.current_frame = self.frame_stack.pop().unwrap();
+                    self.current_chunk = self
+                        .current_frame
                         .closure
                         .as_closure()
                         .function
@@ -759,17 +768,15 @@ impl VM {
     }
 
     fn read_byte(&mut self) -> u8 {
-        let frame = self.frames.last_mut().unwrap();
-        let byte = self.current_chunk.code[frame.ip];
-        frame.ip += 1;
+        let byte = self.current_chunk.code[self.current_frame.ip];
+        self.current_frame.ip += 1;
         byte
     }
 
     fn read_short(&mut self) -> u16 {
-        let frame = self.frames.last_mut().unwrap();
-        frame.ip += 2;
-        ((self.current_chunk.code[frame.ip - 2] as u16) << 8)
-            | (self.current_chunk.code[frame.ip - 1] as u16)
+        self.current_frame.ip += 2;
+        ((self.current_chunk.code[self.current_frame.ip - 2] as u16) << 8)
+            | (self.current_chunk.code[self.current_frame.ip - 1] as u16)
     }
 
     fn read_constant(&mut self) -> Value {
@@ -816,7 +823,10 @@ impl VM {
             mark_value(value, gc_gray_stack);
         }
 
-        for frame in &mut self.frames {
+        // DONE: use current frame
+        mark_object(self.current_frame.closure.clone(), gc_gray_stack);
+
+        for frame in &mut self.frame_stack {
             mark_object(frame.closure.clone(), gc_gray_stack);
         }
 
