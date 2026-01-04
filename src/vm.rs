@@ -768,15 +768,17 @@ impl VM {
     }
 
     fn read_byte(&mut self) -> u8 {
-        let byte = self.current_chunk.code[self.current_frame.ip];
+        let byte = unsafe { self.current_chunk.code.get_unchecked(self.current_frame.ip) };
         self.current_frame.ip += 1;
-        byte
+        *byte
     }
 
     fn read_short(&mut self) -> u16 {
         self.current_frame.ip += 2;
-        ((self.current_chunk.code[self.current_frame.ip - 2] as u16) << 8)
-            | (self.current_chunk.code[self.current_frame.ip - 1] as u16)
+        unsafe {
+            ((*self.current_chunk.code.get_unchecked(self.current_frame.ip - 2) as u16) << 8) | 
+            (*self.current_chunk.code.get_unchecked(self.current_frame.ip - 1) as u16)
+        }
     }
 
     fn read_constant(&mut self) -> Value {
