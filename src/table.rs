@@ -94,3 +94,31 @@ impl<T> Default for Table<T> {
         Self::new()
     }
 }
+
+pub struct ConstantCache {
+    pub table: HashMap<Gc<Obj>, usize, BuildHasherFNV>,
+}
+
+impl ConstantCache {
+    pub fn new() -> Self {
+        ConstantCache {
+            table: HashMap::with_hasher(BuildHasherFNV::new()),
+        }
+    }
+}
+
+impl ConstantCache {
+    pub fn get(&self, key: &Gc<Obj>) -> Option<&usize> {
+        self.table.get(key)
+    }
+
+    pub fn insert(&mut self, key: Gc<Obj>, value: usize) -> Option<usize> {
+        self.table.insert(key, value)
+    }
+}
+
+impl Default for ConstantCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}

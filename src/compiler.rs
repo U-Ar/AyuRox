@@ -14,7 +14,7 @@ use crate::{
         remove_white_strings, sweep, trace_reference,
     },
     scanner::{Scanner, Token, TokenType},
-    table::StringTable,
+    table::{ConstantCache, StringTable},
     value::{FunctionType, Obj, ObjFunction, Value},
     vm::RuntimeExpression,
 };
@@ -37,6 +37,7 @@ pub struct FunctionScope {
     pub function: ObjFunction,
     pub locals: Vec<Local>,
     pub upvalues: Vec<Upvalue>,
+    pub constant_cache: ConstantCache,
 }
 
 pub struct ClassScope {
@@ -66,6 +67,7 @@ impl<'a> Compiler<'a> {
                 is_captured: false,
             }],
             upvalues: Vec::new(),
+            constant_cache: ConstantCache::new(),
         }];
 
         Compiler {
@@ -85,11 +87,19 @@ impl<'a> Compiler<'a> {
         gc_obj
     }
 
-    fn intern_source(&mut self, start: usize, length: usize) -> Gc<Obj> {
+    fn intern_source(&mut self, start: usize, length: usize) -> (Gc<Obj>, Option<usize>) {
         {
             let string = self.parser.scanner.get_source(start, length);
             if let Some(obj) = self.strings.get(string) {
-                return obj.clone();
+                return (
+                    obj.clone(),
+                    self.function_arena
+                        .last()
+                        .unwrap()
+                        .constant_cache
+                        .get(obj)
+                        .cloned(),
+                );
             }
         }
 
@@ -101,7 +111,19 @@ impl<'a> Compiler<'a> {
             self.parser.scanner.get_source(start, length).to_string(),
             obj.clone(),
         );
-        obj
+
+        // インターン化した文字列を検索し、コンパイル中のコードチャンクにおける定数インデックスをキャッシュして再利用する
+        // なければ新しい定数として追加する
+        let index = self.current_chunk().constants.len();
+        self.current_chunk_mut()
+            .constants
+            .write(Value::new_obj(obj.clone()));
+        self.function_arena
+            .last_mut()
+            .unwrap()
+            .constant_cache
+            .insert(obj.clone(), index);
+        (obj, Some(index))
     }
 
     #[allow(dead_code)]
@@ -122,13 +144,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn begin_function_scope(&mut self, function_type: FunctionType) {
-        let name =
-            Some(self.intern_source(self.parser.previous.start, self.parser.previous.length));
+        let (name, _name_index) =
+            self.intern_source(self.parser.previous.start, self.parser.previous.length);
         self.function_arena.push(FunctionScope {
             function: ObjFunction {
                 arity: 0,
                 chunk: Gc::new(Chunk::new()),
-                name,
+                name: Some(name),
                 upvalue_count: 0,
             },
             locals: vec![Local {
@@ -156,6 +178,7 @@ impl<'a> Compiler<'a> {
             }],
             function_type,
             upvalues: Vec::new(),
+            constant_cache: ConstantCache::new(),
         });
     }
 
@@ -628,8 +651,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn identifier_constant(&mut self, name: &Token) -> u8 {
-        let obj = self.intern_source(name.start, name.length);
-        self.make_constant(Value::new_obj(obj))
+        let (obj, index) = self.intern_source(name.start, name.length);
+        if let Some(index) = index {
+            index as u8
+        } else {
+            self.make_constant(Value::new_obj(obj))
+        }
     }
 
     fn identifiers_equal(&self, a: &Token, b: &Token) -> bool {
@@ -1321,11 +1348,15 @@ fn literal(compiler: &mut Compiler, _can_assign: bool) {
 }
 
 fn string(compiler: &mut Compiler, _can_assign: bool) {
-    let obj = compiler.intern_source(
+    let (obj, index) = compiler.intern_source(
         compiler.parser.previous.start + 1,
         compiler.parser.previous.length - 2,
     );
-    compiler.emit_constant(Value::new_obj(obj));
+    if let Some(index) = index {
+        compiler.emit_bytes(OP_CONSTANT, index as u8);
+    } else {
+        compiler.emit_constant(Value::new_obj(obj));
+    }
 }
 
 fn variable(compiler: &mut Compiler, can_assign: bool) {

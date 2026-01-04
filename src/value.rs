@@ -412,6 +412,14 @@ impl ValueArray {
     pub fn write(&mut self, value: Value) {
         self.values.push(value);
     }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
 }
 impl Default for ValueArray {
     fn default() -> Self {

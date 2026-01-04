@@ -1,4 +1,5 @@
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::hash::Hash;
 use std::ops::DerefMut;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -71,6 +72,20 @@ impl<T> std::ops::Deref for Gc<T> {
 impl<T> std::ops::DerefMut for Gc<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl<T> PartialEq for Gc<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl<T> Eq for Gc<T> {}
+
+impl<T> Hash for Gc<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ptr.as_ptr().hash(state);
     }
 }
 

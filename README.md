@@ -15,7 +15,7 @@ craftinginterpreters.com/repo に公開されているテストスイートの�
 - invocation.lox: 0.77 s
 - method_call.lox: 0.54 s
 - properties.lox: 1.42 s
-- string_equality.lox: ?
+- string_equality.lox: 1.24 s (loop)
 - trees.lox: 4.81 s
 - zoo_batch.lox: sum=102540000, batch=1709
 - zoo.lox: 0.93 s
