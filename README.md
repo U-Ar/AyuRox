@@ -21,3 +21,13 @@ craftinginterpreters.com/repo に公開されているテストスイートの�
 - trees.lox: 4.81 s
 - zoo_batch.lox: sum=102540000, batch=1709
 - zoo.lox: 0.93 s
+
+## CHANGELOG
+
+- 2026/01/04: v0.1.0 全テスト成功
+
+## TODO
+
+- read_byte() のオーバーヘッドを減らす
+  - 現在のCallFrameをVecに格納せず、独自の変数としてキャッシュする
+  - frames.last().unwrap() がいたるところにある
